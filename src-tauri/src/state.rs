@@ -9,6 +9,8 @@ pub const HTTP_PORT: u16 = 7420;
 pub const SERVICE_TYPE: &str = "_lanlink._tcp.local.";
 pub const MAX_CLIPS: usize = 50;
 pub const MAX_CLIP_CHARS: usize = 8000;
+pub const CLIP_WINDOW_MS: u64 = 30_000;
+pub const CLIP_MAX_PER_WINDOW: usize = 8;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -24,6 +26,7 @@ pub struct Inner {
     pub pending: RwLock<HashMap<String, PendingOffer>>,
     pub outbound: RwLock<HashMap<String, OutboundFile>>,
     pub clips: RwLock<VecDeque<ClipNote>>,
+    pub clip_times: RwLock<HashMap<String, VecDeque<u64>>>,
     pub events: broadcast::Sender<WsEvent>,
     pub save_dir: RwLock<PathBuf>,
 }
@@ -133,6 +136,7 @@ impl AppState {
                 pending: RwLock::new(HashMap::new()),
                 outbound: RwLock::new(HashMap::new()),
                 clips: RwLock::new(VecDeque::new()),
+                clip_times: RwLock::new(HashMap::new()),
                 events,
                 save_dir: RwLock::new(save_dir),
             }),
@@ -200,6 +204,23 @@ impl AppState {
             created_at: note.created_at,
         });
         note
+    }
+
+    pub async fn allow_clip(&self, ip: &str) -> bool {
+        let now = now_ms();
+        let mut map = self.inner.clip_times.write().await;
+        let queue = map.entry(ip.to_string()).or_default();
+        while queue
+            .front()
+            .is_some_and(|stamp| now.saturating_sub(*stamp) > CLIP_WINDOW_MS)
+        {
+            queue.pop_front();
+        }
+        if queue.len() >= CLIP_MAX_PER_WINDOW {
+            return false;
+        }
+        queue.push_back(now);
+        true
     }
 
     pub fn join_url(&self) -> String {
@@ -283,6 +304,45 @@ pub fn lan_ip() -> String {
     local_ip_address::local_ip()
         .map(|ip| ip.to_string())
         .unwrap_or_else(|_| "127.0.0.1".into())
+}
+
+pub async fn public_network_warning() -> bool {
+    tokio::task::spawn_blocking(detect_public_network)
+        .await
+        .unwrap_or(false)
+}
+
+fn detect_public_network() -> bool {
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("netsh")
+            .args(["advfirewall", "show", "currentprofile"])
+            .output();
+        if let Ok(out) = output {
+            let text = String::from_utf8_lossy(&out.stdout).to_ascii_lowercase();
+            return text.contains("public profile");
+        }
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+pub fn blocked_executable(filename: &str) -> bool {
+    const BLOCKED: &[&str] = &[
+        "exe", "bat", "cmd", "com", "cpl", "dll", "scr", "pif", "msi", "msix", "msp", "mst",
+        "appx", "msixbundle", "js", "jse", "vbs", "vbe", "wsf", "wsh", "ws", "ps1", "psd1",
+        "psm1", "reg", "inf", "ins", "isp", "job", "lnk", "scf", "msc", "hta", "jar", "apk",
+        "app", "command", "dmg", "pkg", "deb", "rpm", "run", "bin", "elf", "so", "dylib",
+        "appimage", "action", "workflow", "scpt", "sh", "bash", "zsh", "gadget", "application",
+        "sys", "drv", "ocx",
+    ];
+    filename
+        .split('.')
+        .skip(1)
+        .any(|part| BLOCKED.contains(&part.to_ascii_lowercase().as_str()))
 }
 
 pub fn unique_path(dir: &std::path::Path, filename: &str) -> PathBuf {

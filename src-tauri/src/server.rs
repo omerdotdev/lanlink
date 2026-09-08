@@ -1,5 +1,8 @@
 use crate::discovery;
-use crate::state::{AppState, PendingOffer, Peer, WsEvent, HTTP_PORT, MAX_CLIP_CHARS};
+use crate::state::{
+    blocked_executable, public_network_warning, AppState, PendingOffer, Peer, WsEvent, HTTP_PORT,
+    MAX_CLIP_CHARS,
+};
 use crate::transfer;
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket};
@@ -103,6 +106,34 @@ fn guest_label(kind: &str, ip: &str) -> String {
     }
 }
 
+fn require_loopback(addr: SocketAddr) -> Option<axum::response::Response> {
+    if addr.ip().to_canonical().is_loopback() {
+        None
+    } else {
+        Some(
+            (
+                StatusCode::FORBIDDEN,
+                "only the desktop app on this computer can change this",
+            )
+                .into_response(),
+        )
+    }
+}
+
+fn reject_blocked_file(filename: &str) -> Option<axum::response::Response> {
+    if blocked_executable(filename) {
+        Some(
+            (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "executable files are not allowed",
+            )
+                .into_response(),
+        )
+    } else {
+        None
+    }
+}
+
 async fn health() -> &'static str {
     "ok"
 }
@@ -130,6 +161,13 @@ async fn post_clip(
         return (
             StatusCode::BAD_REQUEST,
             format!("text must be {MAX_CLIP_CHARS} characters or fewer"),
+        )
+            .into_response();
+    }
+    if !state.allow_clip(&client_ip(addr)).await {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many notes; wait a few seconds",
         )
             .into_response();
     }
@@ -181,6 +219,7 @@ async fn status(State(state): State<AppState>) -> impl IntoResponse {
         "save_dir": state.save_dir().await,
         "peers": state.all_peers().await,
         "clips": state.clips().await,
+        "public_network": public_network_warning().await,
     }))
 }
 
@@ -189,7 +228,14 @@ struct NameBody {
     name: String,
 }
 
-async fn set_name(State(state): State<AppState>, Json(body): Json<NameBody>) -> impl IntoResponse {
+async fn set_name(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<NameBody>,
+) -> impl IntoResponse {
+    if let Some(denied) = require_loopback(addr) {
+        return denied;
+    }
     let name = body.name.trim();
     if name.is_empty() || name.len() > 64 {
         return (StatusCode::BAD_REQUEST, "name must be 1-64 characters").into_response();
@@ -205,7 +251,14 @@ struct SaveDirBody {
     path: String,
 }
 
-async fn set_save_dir(State(state): State<AppState>, Json(body): Json<SaveDirBody>) -> impl IntoResponse {
+async fn set_save_dir(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<SaveDirBody>,
+) -> impl IntoResponse {
+    if let Some(denied) = require_loopback(addr) {
+        return denied;
+    }
     let path = body.path.trim();
     if path.is_empty() || path.len() > 512 {
         return (StatusCode::BAD_REQUEST, "Choose a folder path.").into_response();
@@ -290,6 +343,7 @@ async fn handle_socket(state: AppState, socket: WebSocket, query: WsQuery, addr:
         "save_dir": state.save_dir().await,
         "peers": state.all_peers().await,
         "clips": state.clips().await,
+        "public_network": public_network_warning().await,
     });
     let _ = sender.send(Message::Text(hello.to_string().into())).await;
 
@@ -333,6 +387,9 @@ struct OfferReq {
 }
 
 async fn offer(State(state): State<AppState>, Json(body): Json<OfferReq>) -> impl IntoResponse {
+    if let Some(denied) = reject_blocked_file(&body.filename) {
+        return denied;
+    }
     let id = Uuid::new_v4().to_string();
     let (tx, rx) = oneshot::channel();
     state.inner.pending.write().await.insert(
@@ -438,6 +495,10 @@ async fn data(
         .and_then(|v| v.to_str().ok())
         .unwrap_or(&meta.filename)
         .to_string();
+    if let Some(denied) = reject_blocked_file(&filename) {
+        state.inner.pending.write().await.insert(id, meta);
+        return denied;
+    }
     let stream = body.into_data_stream();
     match transfer::write_incoming_body(&state, &id, &filename, meta.size, stream).await {
         Ok(path) => Json(serde_json::json!({ "saved_path": path })).into_response(),
@@ -540,6 +601,9 @@ async fn web_offer(
     } else {
         filename.to_string()
     };
+    if let Some(denied) = reject_blocked_file(&filename) {
+        return denied;
+    }
     let target_id = body.target_id.trim().to_string();
     let target = state
         .all_peers()
@@ -765,6 +829,10 @@ async fn send_local(
         tracing::warn!("send_local: missing file field (peer_id={peer_id})");
         return (StatusCode::BAD_REQUEST, "file is required").into_response();
     };
+    if let Some(denied) = reject_blocked_file(&filename) {
+        let _ = tokio::fs::remove_file(&path).await;
+        return denied;
+    }
     if !offer_id.trim().is_empty() {
         return attach_web_offer(state, offer_id.trim().to_string(), filename, path).await;
     }
@@ -829,6 +897,10 @@ async fn ingest_to_this_device(
     path: PathBuf,
     from_name: String,
 ) -> axum::response::Response {
+    if let Some(denied) = reject_blocked_file(&filename) {
+        let _ = tokio::fs::remove_file(&path).await;
+        return denied;
+    }
     let size = tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0);
     let id = Uuid::new_v4().to_string();
     state.inner.pending.write().await.insert(

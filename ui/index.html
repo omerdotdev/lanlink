@@ -54,6 +54,10 @@
         </div>
       </header>
 
+      <p class="network-warn" id="network-warn" hidden>
+        Windows marks this network as Public. Do not share the join URL here. Use a private/home network instead.
+      </p>
+
       <section class="incoming" id="incoming-wrap" hidden>
         <div>
           <p class="section-kicker">Receive</p>
@@ -78,7 +82,7 @@
         <div class="grid">
           <div class="card drop" id="drop">
             <h3>Your file</h3>
-            <p class="muted" id="file-help">Drop a file here, or browse. PDFs, pictures, and other types are all fine.</p>
+            <p class="muted" id="file-help">Drop a file here, or browse. PDFs, pictures, and other types are all fine. Programs and scripts are blocked.</p>
             <input id="file" class="file-native" type="file" />
             <label class="file-btn" for="file" id="file-label">Choose file</label>
             <p id="chosen" class="muted">No file selected yet.</p>
@@ -167,6 +171,43 @@
       <div id="xfer-list"></div>
     </div>
 
+    <button type="button" class="disclaimer-fab" id="open-disclaimer" aria-label="Disclaimer">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3.4 21.4 20H2.6L12 3.4Z"></path>
+        <path d="M12 9.5v5.2"></path>
+        <circle cx="12" cy="17.2" r="0.7"></circle>
+      </svg>
+      <span>Disclaimer</span>
+    </button>
+
+    <div class="drawer-root" id="disclaimer-root" hidden>
+      <div class="drawer-backdrop" id="disclaimer-backdrop"></div>
+      <aside class="drawer disclaimer-drawer" role="dialog" aria-modal="true" aria-labelledby="disclaimer-title">
+        <header class="drawer-head">
+          <h2 id="disclaimer-title">Disclaimer</h2>
+          <button type="button" class="ghost icon" id="close-disclaimer" aria-label="Close disclaimer">Close</button>
+        </header>
+        <section class="drawer-section prose">
+          <p>
+            Lanlink is for a network you trust. It listens on TCP port 7420 on all
+            interfaces and may advertise itself with mDNS (UDP 5353). There is no login
+            and no encryption.
+          </p>
+          <p>
+            Anyone who can open the join URL can send a file offer, read the shared notes
+            board, and see connected devices. File data is sent only after that device
+            taps Accept. Shared notes are broadcast to everyone. Do not forward port 7420
+            off your LAN. Do not share passwords on the board. Review file names before
+            accepting. Executables and scripts are blocked.
+          </p>
+          <p>
+            Device name and the save folder can be changed only from this computer’s
+            desktop window (localhost). Guests cannot change them over the LAN.
+          </p>
+        </section>
+      </aside>
+    </div>
+
     <div class="drawer-root" id="settings-root" hidden>
       <div class="drawer-backdrop" id="settings-backdrop"></div>
       <aside class="drawer" id="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -231,10 +272,12 @@
         <section class="drawer-section prose">
           <h3>Disclaimer</h3>
           <p>
-            Use only on a network you trust. Anyone who can reach the join address may
-            offer a file. Review the name and size before accepting. Do not publish port
-            7420 beyond your LAN. This release does not encrypt transfers or authenticate
-            senders.
+            Use only on a network you trust. Anyone who can reach the join URL may offer a
+            file and see the shared notes board. File bytes move only after that device
+            taps Accept. Notes are broadcast with no encryption. Do not forward TCP port
+            7420 (or UDP 5353 for discovery) off your LAN. Device name and save folder can
+            be changed only from this desktop app. Programs and scripts cannot be sent.
+            Full notes live in SECURITY.md.
           </p>
         </section>
         <section class="drawer-section prose">

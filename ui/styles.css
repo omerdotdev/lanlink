@@ -291,7 +291,7 @@ html[data-skin="aero"][data-theme="dark"] .icon-btn {
     var(--shadow);
 }
 
-html[data-skin="aero"] button:not(.ghost):not(.icon-btn),
+html[data-skin="aero"] button:not(.ghost):not(.icon-btn):not(.disclaimer-fab),
 html[data-skin="aero"] .file-btn {
   background: linear-gradient(180deg, #9ee8ff 0%, #2ac4f0 42%, #1298d4 100%);
   box-shadow:
@@ -301,7 +301,7 @@ html[data-skin="aero"] .file-btn {
     0 8px 16px rgba(20, 130, 180, 0.28);
 }
 
-html[data-skin="aero"][data-theme="dark"] button:not(.ghost):not(.icon-btn),
+html[data-skin="aero"][data-theme="dark"] button:not(.ghost):not(.icon-btn):not(.disclaimer-fab),
 html[data-skin="aero"][data-theme="dark"] .file-btn {
   background: linear-gradient(180deg, #b8ffe8 0%, #48f0c0 46%, #12b888 100%);
   box-shadow:
@@ -367,7 +367,7 @@ html[data-skin="liquid"] .icon-btn {
   color: var(--text);
 }
 
-html[data-skin="liquid"] button:not(.ghost):not(.icon-btn),
+html[data-skin="liquid"] button:not(.ghost):not(.icon-btn):not(.disclaimer-fab),
 html[data-skin="liquid"] .file-btn {
   background: rgba(255, 255, 255, 0.34);
   color: var(--accent-ink);
@@ -410,10 +410,8 @@ html[data-skin="cyber"] body {
   background-size: 28px 28px, 28px 28px, auto;
 }
 
-html[data-skin="cyber"] .card,
-html[data-skin="cyber"] button,
-html[data-skin="cyber"] .file-btn {
-  border-radius: 2px;
+html[data-skin="cyber"] .disclaimer-fab {
+  border-radius: 999px;
 }
 
 html[data-skin="cyber"] h1,
@@ -477,6 +475,10 @@ html[data-skin="liquid"] body::before {
   gap: 16px;
   align-items: center;
   margin-bottom: 28px;
+}
+
+html[data-theme="dark"] .network-warn {
+  color: #3a2200;
 }
 
 .brand {
@@ -1193,7 +1195,7 @@ body.is-guest .host-only {
 .xfer-pop {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: 84px;
   z-index: 15;
   width: min(360px, calc(100% - 32px));
   background: var(--card);
@@ -1201,6 +1203,42 @@ body.is-guest .host-only {
   border-radius: 16px;
   box-shadow: var(--shadow);
   padding: 14px 16px;
+}
+
+.disclaimer-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 16;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #7a3b00;
+  background: #ffd36a;
+  border: 1px solid #e0a020;
+  box-shadow: var(--shadow);
+}
+
+.disclaimer-fab svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+html[data-theme="dark"] .disclaimer-fab {
+  color: #3a2200;
+}
+
+.disclaimer-drawer {
+  width: min(420px, 100%);
 }
 
 .xfer-title {

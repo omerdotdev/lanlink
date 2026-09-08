@@ -1,4 +1,4 @@
-use crate::state::{unique_path, AppState, OutboundFile, Peer, WsEvent};
+use crate::state::{blocked_executable, unique_path, AppState, OutboundFile, Peer, WsEvent};
 use bytes::Bytes;
 use futures::StreamExt;
 use reqwest::Body;
@@ -32,6 +32,9 @@ pub async fn send_file(
     filename: String,
     path: PathBuf,
 ) -> Result<(), TransferError> {
+    if blocked_executable(&filename) {
+        return Err(TransferError::Message("executable files are not allowed".into()));
+    }
     let size = tokio::fs::metadata(&path).await?.len();
     if peer.kind == "web" {
         return send_to_web(state, peer, filename, path, size).await;
@@ -197,6 +200,9 @@ where
     S: futures::Stream<Item = Result<Bytes, E>> + Unpin,
     E: std::fmt::Display,
 {
+    if blocked_executable(filename) {
+        return Err(TransferError::Message("executable files are not allowed".into()));
+    }
     let path = unique_path(&state.save_dir().await, filename);
     let tmp = path.with_extension(format!(
         "{}part",

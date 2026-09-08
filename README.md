@@ -6,7 +6,9 @@ Share files between devices on the same local network. Written in Rust.
 - **Phone / other computer:** open the join URL or scan the QR code in a browser — no mobile app yet
 - **Laptop to laptop:** each app discovers the other with mDNS and sends files over HTTP
 
-This is **local-network only**. There are no accounts and no encryption beyond “accept or decline this file.” Do not expose port `7420` to the internet.
+This is **local-network only**. There are no accounts and no encryption. File data waits for Accept. Shared notes are visible to everyone on the join URL. Do not expose port `7420` to the internet.
+
+See **[SECURITY.md](SECURITY.md)** for measures, ports, and remaining work.
 
 ## Requirements
 
@@ -40,10 +42,11 @@ powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 
 1. The app advertises `_lanlink._tcp` on mDNS and listens on `0.0.0.0:7420`.
 2. Nearby Lanlink desktops show up in **Devices nearby**.
-3. Sending a file asks the receiver to **Accept** or **Decline**. Accepted files are written under `Downloads/Lanlink`.
+3. Sending a file asks the receiver to **Accept** or **Decline**. Programs and scripts are blocked. Accepted files are written under `Downloads/Lanlink`.
 4. A phone on the same Wi‑Fi opens `http://<your-lan-ip>:7420` (or the QR code) and can send to this computer, or receive a file you send to that browser session.
+5. **Shared notes** broadcasts a line of text to every connected device. There is no Accept step for notes.
 
-Allow TCP **7420** and UDP **5353** (mDNS) through the OS firewall if devices cannot see each other.
+Allow TCP **7420** and UDP **5353** (mDNS) through the OS firewall **on a private/LAN profile** if devices cannot see each other. Do not forward those ports on the router.
 
 ## Project layout
 
@@ -52,6 +55,7 @@ Allow TCP **7420** and UDP **5353** (mDNS) through the OS firewall if devices ca
 - `src-tauri/src/discovery.rs` — mDNS advertise/browse
 - `src-tauri/src/transfer.rs` — outbound HTTP send + receive streaming
 - `ui/` — Vite + vanilla TypeScript frontend
+- `SECURITY.md` — trust model, ports, current controls, later TODOs
 
 ## License
 

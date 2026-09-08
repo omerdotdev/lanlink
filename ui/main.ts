@@ -15,6 +15,7 @@ type Hello = {
   save_dir: string;
   peers: Peer[];
   clips?: ClipNote[];
+  public_network?: boolean;
 };
 
 type ClipNote = {
@@ -75,6 +76,10 @@ const saveDirInput = document.querySelector("#save-dir-input") as HTMLInputEleme
 const saveDirForm = document.querySelector("#save-dir-form") as HTMLFormElement;
 const saveDirStatus = document.querySelector("#save-dir-status") as HTMLParagraphElement;
 const browseSaveDir = document.querySelector("#browse-save-dir") as HTMLButtonElement;
+const openDisclaimer = document.querySelector("#open-disclaimer") as HTMLButtonElement;
+const disclaimerRoot = document.querySelector("#disclaimer-root") as HTMLElement;
+const closeDisclaimer = document.querySelector("#close-disclaimer") as HTMLButtonElement;
+const disclaimerBackdrop = document.querySelector("#disclaimer-backdrop") as HTMLElement;
 const sendHeading = document.querySelector("#send-heading") as HTMLHeadingElement;
 const sendLede = document.querySelector("#send-lede") as HTMLParagraphElement;
 const nearbyTitle = document.querySelector("#nearby-title") as HTMLHeadingElement;
@@ -88,6 +93,7 @@ const shareClip = document.querySelector("#share-clip") as HTMLButtonElement;
 const clipsEl = document.querySelector("#clips") as HTMLUListElement;
 const emptyClips = document.querySelector("#empty-clips") as HTMLParagraphElement;
 const clipStatus = document.querySelector("#clip-status") as HTMLParagraphElement;
+const networkWarn = document.querySelector("#network-warn") as HTMLElement;
 const isPhone = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 let selfId = "";
@@ -350,13 +356,17 @@ function showSaveDir(path: string) {
   saveDir.textContent = `Files you accept on this computer are stored in ${path}.`;
 }
 
+function showNetworkWarn(publicNetwork: boolean | undefined) {
+  networkWarn.hidden = !publicNetwork;
+}
+
 function applyGuestCopy() {
   if (isHost) return;
   sendHeading.textContent = "Choose a file, then a device";
   sendLede.textContent =
     "Pick a file here, then tap Send on any computer or browser in the list. That device will get Accept / Decline.";
   nearbyTitle.textContent = "Nearby devices";
-  if (fileHelp) fileHelp.textContent = "Drop a file here, or browse. Then send it to a device on the right.";
+  if (fileHelp) fileHelp.textContent = "Drop a file here, or browse. Then send it to a device on the right. Programs and scripts are blocked.";
   if (fileLabel) fileLabel.textContent = "Choose file";
 }
 
@@ -582,6 +592,21 @@ async function saveReceivedFile(id: string, url: string, filename: string, known
   updateActivity(id, { filename, direction: "receive", status: "done", size: total });
 }
 
+function blockedExecutable(filename: string): boolean {
+  const blocked = new Set([
+    "exe", "bat", "cmd", "com", "cpl", "dll", "scr", "pif", "msi", "msix", "msp", "mst",
+    "appx", "msixbundle", "js", "jse", "vbs", "vbe", "wsf", "wsh", "ws", "ps1", "psd1",
+    "psm1", "reg", "inf", "ins", "isp", "job", "lnk", "scf", "msc", "hta", "jar", "apk",
+    "app", "command", "dmg", "pkg", "deb", "rpm", "run", "bin", "elf", "so", "dylib",
+    "appimage", "action", "workflow", "scpt", "sh", "bash", "zsh", "gadget", "application",
+    "sys", "drv", "ocx",
+  ]);
+  return filename
+    .split(".")
+    .slice(1)
+    .some((part) => blocked.has(part.toLowerCase()));
+}
+
 async function sendTo(peerId: string) {
   const file = fileInput.files?.[0] ?? selectedFile ?? null;
   if (!file) {
@@ -591,6 +616,10 @@ async function sendTo(peerId: string) {
   }
   if (!peerId && hostId) peerId = hostId;
   const filename = file.name?.trim() || `upload-${Date.now()}`;
+  if (blockedExecutable(filename)) {
+    chosen.textContent = "That file type is blocked (programs and scripts).";
+    return;
+  }
   let id = localTransferId();
   updateActivity(id, {
     filename,
@@ -759,6 +788,7 @@ function onEvent(ev: EventMsg) {
       peers = ev.peers;
       renderPeers();
       if (ev.clips) replaceClips(ev.clips);
+      showNetworkWarn(ev.public_network);
       break;
     case "peers":
       peers = ev.peers;
@@ -915,9 +945,21 @@ browseSaveDir.addEventListener("click", () => {
     "Paste or type a folder path, then save. Incoming files on this computer will go there.";
 });
 
-function onFileChosen() {
-  selectedFile = fileInput.files?.[0] ?? null;
+function takeSelectedFile(file: File | null) {
+  if (file && blockedExecutable(file.name)) {
+    selectedFile = null;
+    fileInput.value = "";
+    chosen.textContent = "That file type is blocked (programs and scripts).";
+    updateSendControls();
+    return;
+  }
+  selectedFile = file;
   chosen.textContent = selectedFile ? selectedFile.name : "No file selected yet.";
+  updateSendControls();
+}
+
+function onFileChosen() {
+  takeSelectedFile(fileInput.files?.[0] ?? null);
   renderPeers();
   if (selectedFile && chooseThenSend) {
     chooseThenSend = false;
@@ -935,8 +977,7 @@ drop.addEventListener("dragleave", () => drop.classList.remove("hover"));
 drop.addEventListener("drop", (e) => {
   e.preventDefault();
   drop.classList.remove("hover");
-  selectedFile = e.dataTransfer?.files[0] ?? null;
-  chosen.textContent = selectedFile ? selectedFile.name : "No file selected yet.";
+  takeSelectedFile(e.dataTransfer?.files[0] ?? null);
   renderPeers();
 });
 
@@ -950,11 +991,29 @@ function closeDrawer() {
   openSettings.focus();
 }
 
+function openDisclaimerPanel() {
+  disclaimerRoot.hidden = false;
+  closeDisclaimer.focus();
+}
+
+function closeDisclaimerPanel() {
+  disclaimerRoot.hidden = true;
+  openDisclaimer.focus();
+}
+
 openSettings.addEventListener("click", openDrawer);
 closeSettings.addEventListener("click", closeDrawer);
 settingsBackdrop.addEventListener("click", closeDrawer);
+openDisclaimer.addEventListener("click", openDisclaimerPanel);
+closeDisclaimer.addEventListener("click", closeDisclaimerPanel);
+disclaimerBackdrop.addEventListener("click", closeDisclaimerPanel);
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !settingsRoot.hidden) closeDrawer();
+  if (e.key !== "Escape") return;
+  if (!disclaimerRoot.hidden) {
+    closeDisclaimerPanel();
+    return;
+  }
+  if (!settingsRoot.hidden) closeDrawer();
 });
 
 applySkin(skinPref());
@@ -1048,7 +1107,7 @@ renderClips();
 updateSendControls();
 void fetch("/api/status")
   .then((r) => r.json())
-  .then((status: { id: string; name: string; url: string; save_dir: string; peers: Peer[]; clips?: ClipNote[] }) => {
+  .then((status: { id: string; name: string; url: string; save_dir: string; peers: Peer[]; clips?: ClipNote[]; public_network?: boolean }) => {
     hostId = status.id;
     if (!joinUrl.textContent || joinUrl.textContent === "Starting…") {
       joinUrl.textContent = status.url;
@@ -1062,6 +1121,7 @@ void fetch("/api/status")
     if (Array.isArray(status.clips) && status.clips.length) {
       replaceClips(status.clips);
     }
+    showNetworkWarn(status.public_network);
     renderPeers();
   })
   .catch(() => undefined);

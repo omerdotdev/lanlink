@@ -85,6 +85,7 @@ let socket: WebSocket | null = null;
 let chooseThenSend = false;
 let sendingBatch = false;
 const selectedPeerIds = new Set<string>();
+const decidedIncomingIds = new Set<string>();
 const isHost = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 document.body.classList.toggle("is-guest", !isHost);
 
@@ -435,8 +436,6 @@ async function saveReceivedFile(id: string, url: string, filename: string, known
   a.click();
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
   updateActivity(id, { filename, direction: "receive", status: "done", size: total });
-  incomingWrap.hidden = true;
-  pendingIncoming = null;
 }
 
 async function sendTo(peerId: string) {
@@ -449,7 +448,6 @@ async function sendTo(peerId: string) {
   if (!peerId && hostId) peerId = hostId;
   const filename = file.name?.trim() || `upload-${Date.now()}`;
   let id = localTransferId();
-  setXfer(id, { filename, direction: "send", done: 0, total: file.size, state: "active" });
   updateActivity(id, {
     filename,
     direction: "send",
@@ -492,6 +490,13 @@ async function uploadAccepted(id: string) {
   const pending = pendingUploads.get(id);
   if (!pending) return;
   pendingUploads.delete(id);
+  setXfer(id, {
+    filename: pending.filename,
+    direction: "send",
+    done: 0,
+    total: pending.file.size,
+    state: "active",
+  });
   updateActivity(id, { status: "sending" });
   const data = new FormData();
   data.set("offer_id", id);
@@ -581,17 +586,11 @@ function closeIncomingIfMatching(id: string) {
 }
 
 function showIncoming(ev: Incoming) {
+  if (decidedIncomingIds.has(ev.id)) return;
   pendingIncoming = ev;
   incomingWrap.hidden = false;
   incomingWrap.removeAttribute("hidden");
   incomingText.textContent = `${ev.from} wants to send ${ev.filename} (${fmtSize(ev.size)})`;
-  setXfer(ev.id, {
-    filename: ev.filename,
-    direction: "receive",
-    done: 0,
-    total: ev.size,
-    state: "active",
-  });
   updateActivity(ev.id, {
     filename: ev.filename,
     direction: "receive",
@@ -684,11 +683,16 @@ function onEvent(ev: EventMsg) {
 acceptBtn.addEventListener("click", async () => {
   if (!pendingIncoming) return;
   const incoming = pendingIncoming;
+  decidedIncomingIds.add(incoming.id);
+  incomingWrap.hidden = true;
+  pendingIncoming = null;
   acceptBtn.disabled = true;
   try {
     const res = await fetch(`/api/files/${incoming.id}/accept`, { method: "POST" });
     const body = (await res.json().catch(() => ({}))) as { download?: string };
     if (!res.ok) {
+      decidedIncomingIds.delete(incoming.id);
+      showIncoming(incoming);
       updateActivity(incoming.id, { status: "error" });
       return;
     }
@@ -697,9 +701,9 @@ acceptBtn.addEventListener("click", async () => {
       return;
     }
     updateActivity(incoming.id, { status: "receiving" });
-    incomingWrap.hidden = true;
-    pendingIncoming = null;
   } catch (err) {
+    decidedIncomingIds.delete(incoming.id);
+    showIncoming(incoming);
     updateActivity(incoming.id, { status: "error" });
   } finally {
     acceptBtn.disabled = false;
@@ -708,7 +712,22 @@ acceptBtn.addEventListener("click", async () => {
 
 declineBtn.addEventListener("click", async () => {
   if (!pendingIncoming) return;
-  await fetch(`/api/files/${pendingIncoming.id}/decline`, { method: "POST" });
+  const incoming = pendingIncoming;
+  decidedIncomingIds.add(incoming.id);
+  incomingWrap.hidden = true;
+  pendingIncoming = null;
+  try {
+    const res = await fetch(`/api/files/${incoming.id}/decline`, { method: "POST" });
+    if (!res.ok) {
+      decidedIncomingIds.delete(incoming.id);
+      showIncoming(incoming);
+      updateActivity(incoming.id, { status: "error" });
+    }
+  } catch {
+    decidedIncomingIds.delete(incoming.id);
+    showIncoming(incoming);
+    updateActivity(incoming.id, { status: "error" });
+  }
 });
 
 nameForm.addEventListener("submit", async (e) => {

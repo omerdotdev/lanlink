@@ -110,7 +110,7 @@ async fn inbox(State(state): State<AppState>) -> impl IntoResponse {
     let pending = state.inner.pending.read().await;
     let items: Vec<_> = pending
         .iter()
-        .filter(|(_, p)| p.target_id == state.inner.id)
+        .filter(|(_, p)| p.target_id == state.inner.id && !p.accepted)
         .map(|(id, p)| {
             serde_json::json!({
                 "type": "incoming",
@@ -332,6 +332,7 @@ async fn accept(State(state): State<AppState>, Path(id): Path<String>) -> impl I
         let mut pending_map = state.inner.pending.write().await;
         if let Some(pending) = pending_map.get_mut(&id) {
             if let Some(tx) = pending.decision.take() {
+                pending.accepted = true;
                 let _ = tx.send(true);
                 return Json(serde_json::json!({ "ok": true })).into_response();
             }
@@ -380,7 +381,7 @@ async fn data(
     let Some(meta) = state.inner.pending.write().await.remove(&id) else {
         return (StatusCode::NOT_FOUND, "unknown transfer").into_response();
     };
-    if meta.decision.is_some() || meta.staged_path.is_some() {
+    if !meta.accepted || meta.decision.is_some() || meta.staged_path.is_some() {
         state.inner.pending.write().await.insert(id, meta);
         return (StatusCode::FORBIDDEN, "not accepted").into_response();
     }

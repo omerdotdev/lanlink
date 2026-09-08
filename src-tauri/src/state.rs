@@ -321,18 +321,40 @@ pub async fn public_network_warning() -> bool {
 fn detect_public_network() -> bool {
     #[cfg(windows)]
     {
-        let output = std::process::Command::new("netsh")
-            .args(["advfirewall", "show", "currentprofile"])
-            .output();
-        if let Ok(out) = output {
-            let text = String::from_utf8_lossy(&out.stdout).to_ascii_lowercase();
-            return text.contains("public profile");
-        }
-        false
+        windows_lan_profile_is_public()
     }
     #[cfg(not(windows))]
     {
         false
+    }
+}
+
+/// Match Settings → Network profile type for the adapter that owns the join IP.
+/// `netsh advfirewall show currentprofile` is the wrong signal: Windows prints
+/// every firewall profile that is ON (often including Public on vEthernet).
+#[cfg(windows)]
+fn windows_lan_profile_is_public() -> bool {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let ip = lan_ip();
+    if !ip.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ':') {
+        return false;
+    }
+    let script = format!(
+        "$ip = '{ip}'; $cat = $null; $idx = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {{ $_.IPAddress -eq $ip }} | Select-Object -ExpandProperty InterfaceIndex -First 1); if ($idx) {{ $cat = (Get-NetConnectionProfile -InterfaceIndex $idx -ErrorAction SilentlyContinue).NetworkCategory }}; if (-not $cat) {{ $cats = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | Where-Object {{ $_.IPv4Connectivity -ne 'Disconnected' }} | ForEach-Object {{ $_.NetworkCategory.ToString() }}); if ($cats -contains 'Private' -or $cats -contains 'DomainAuthenticated') {{ $cat = 'Private' }} elseif ($cats -contains 'Public') {{ $cat = 'Public' }} else {{ $cat = 'Private' }} }}; Write-Output $cat"
+    );
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+    match output {
+        Ok(out) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout)
+                .trim()
+                .eq_ignore_ascii_case("Public")
+        }
+        _ => false,
     }
 }
 

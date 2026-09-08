@@ -14,7 +14,7 @@ The in-app **Disclaimer** button (bottom right) shows the same warning.
 - **Safe writes.** Filenames are sanitized. A unique path is used so an accepted file does not overwrite an existing one. Downloads use `Content-Disposition: attachment`.
 - **Shared notes caps.** Notes are at most 8,000 characters. The host keeps the last 50. Posting is rate-limited (8 notes per 30 seconds per client IP). Notes stay in memory, not in Downloads.
 - **Ports.** The app listens on **TCP 7420** on all interfaces (`0.0.0.0`) for UI, files, WebSocket, and notes. Desktops may advertise with mDNS on **UDP 5353**. Allow these only on a **private/LAN** firewall profile.
-- **Public-network warning.** On Windows, if the current firewall profile is Public, the UI warns you not to share the join URL.
+- **Public-network warning.** On Windows, if the LAN adapter’s network profile (Settings → Network profile type) is Public, the host UI warns you not to share the join URL. Virtual adapters that stay Public do not trigger this.
 - **Desktop privileges.** The Tauri window uses `core:default` only and loads `http://127.0.0.1:7420`.
 
 ## What is still open (by design)

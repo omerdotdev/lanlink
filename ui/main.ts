@@ -359,7 +359,7 @@ function showSaveDir(path: string) {
 }
 
 function showNetworkWarn(publicNetwork: boolean | undefined) {
-  networkWarn.hidden = !publicNetwork;
+  networkWarn.hidden = !(isHost && publicNetwork);
 }
 
 function applyGuestCopy() {

@@ -112,6 +112,60 @@ let clips: ClipNote[] = [];
 const isHost = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 document.body.classList.toggle("is-guest", !isHost);
 
+type Cue = "send" | "receive" | "note" | "clear";
+let audioCtx: AudioContext | null = null;
+
+function unlockAudio() {
+  const Ctor =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) return;
+  if (!audioCtx) audioCtx = new Ctor();
+  if (audioCtx.state === "suspended") void audioCtx.resume();
+}
+
+function beep(freq: number, when: number, dur: number) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(freq, when);
+  gain.gain.setValueAtTime(0.0001, when);
+  gain.gain.exponentialRampToValueAtTime(0.07, when + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(when);
+  osc.stop(when + dur + 0.02);
+}
+
+function playCue(kind: Cue) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  unlockAudio();
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const notes =
+    kind === "send"
+      ? [
+          [880, 0, 0.07],
+          [1175, 0.07, 0.08],
+        ]
+      : kind === "receive"
+        ? [
+            [523, 0, 0.08],
+            [784, 0.08, 0.1],
+          ]
+        : kind === "note"
+          ? [[1047, 0, 0.055]]
+          : [
+              [392, 0, 0.05],
+              [262, 0.05, 0.09],
+            ];
+  for (const [freq, delay, dur] of notes) beep(freq, t + delay, dur);
+}
+
+document.addEventListener("pointerdown", unlockAudio, { passive: true });
+
 type ThemePref = "light" | "dark";
 type SkinPref = "aero" | "liquid" | "cyber" | "astral" | "space";
 
@@ -323,6 +377,7 @@ function setXfer(id: string, patch: Partial<Xfer> & Pick<Xfer, "filename" | "dir
 function finishXfer(id: string, state: "done" | "error") {
   const cur = xfers.get(id);
   if (!cur) return;
+  const alreadyDone = cur.state === "done";
   const total = Math.max(cur.total, cur.done, 1);
   xfers.set(id, {
     ...cur,
@@ -330,6 +385,9 @@ function finishXfer(id: string, state: "done" | "error") {
     done: state === "done" ? total : cur.done,
     total,
   });
+  if (state === "done" && !alreadyDone) {
+    playCue(cur.direction === "send" ? "send" : "receive");
+  }
   renderXfers();
   window.setTimeout(() => {
     xfers.delete(id);
@@ -458,10 +516,11 @@ function renderClips() {
   }
 }
 
-function addClip(note: ClipNote) {
-  if (clips.some((item) => item.id === note.id)) return;
+function addClip(note: ClipNote): boolean {
+  if (clips.some((item) => item.id === note.id)) return false;
   clips = [note, ...clips].slice(0, 50);
   renderClips();
+  return true;
 }
 
 function replaceClips(notes: ClipNote[]) {
@@ -481,6 +540,7 @@ async function clearBoardNotes() {
     }
     replaceClips([]);
     clipStatus.textContent = "Board cleared.";
+    playCue("clear");
     window.setTimeout(() => {
       if (clipStatus.textContent === "Board cleared.") clipStatus.textContent = "";
     }, 1600);
@@ -535,6 +595,7 @@ async function shareBoardNote() {
     addClip(note);
     clipText.value = "";
     clipStatus.textContent = "Shared.";
+    playCue("note");
     window.setTimeout(() => {
       if (clipStatus.textContent === "Shared.") clipStatus.textContent = "";
     }, 1600);
@@ -877,11 +938,14 @@ function onEvent(ev: EventMsg) {
       });
       break;
     case "clip":
-      addClip(ev);
+      if (addClip(ev)) playCue("note");
       break;
-    case "clips_cleared":
+    case "clips_cleared": {
+      const hadNotes = clips.length > 0;
       replaceClips([]);
+      if (hadNotes) playCue("clear");
       break;
+    }
   }
 }
 

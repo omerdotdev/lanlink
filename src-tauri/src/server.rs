@@ -1,5 +1,5 @@
 use crate::discovery;
-use crate::state::{AppState, PendingOffer, Peer, WsEvent, HTTP_PORT};
+use crate::state::{AppState, PendingOffer, Peer, WsEvent, HTTP_PORT, MAX_CLIP_CHARS};
 use crate::transfer;
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket};
@@ -79,6 +79,7 @@ fn router(state: AppState, dist: PathBuf) -> Router {
         .route("/api/files/{id}/download", get(download))
         .route("/api/send", post(send_local))
         .route("/api/web-offer", post(web_offer))
+        .route("/api/clips", get(list_clips).post(post_clip))
         .fallback_service(static_files)
         .layer(DefaultBodyLimit::max(1024 * 1024 * 1024))
         .layer(
@@ -104,6 +105,51 @@ fn guest_label(kind: &str, ip: &str) -> String {
 
 async fn health() -> &'static str {
     "ok"
+}
+
+async fn list_clips(State(state): State<AppState>) -> impl IntoResponse {
+    Json(serde_json::json!({ "clips": state.clips().await }))
+}
+
+#[derive(Deserialize)]
+struct ClipReq {
+    text: String,
+    from_name: Option<String>,
+}
+
+async fn post_clip(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<ClipReq>,
+) -> impl IntoResponse {
+    let text = body.text.trim();
+    if text.is_empty() {
+        return (StatusCode::BAD_REQUEST, "text is required").into_response();
+    }
+    if text.chars().count() > MAX_CLIP_CHARS {
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("text must be {MAX_CLIP_CHARS} characters or fewer"),
+        )
+            .into_response();
+    }
+    let hint = body.from_name.unwrap_or_default();
+    let from = if addr.ip().is_loopback() {
+        if hint.trim().is_empty() {
+            state.inner.name.read().await.clone()
+        } else {
+            hint
+        }
+    } else {
+        let kind = if hint.to_lowercase().contains("phone") {
+            "phone"
+        } else {
+            "browser"
+        };
+        guest_label(kind, &client_ip(addr))
+    };
+    let note = state.push_clip(from, text.to_string()).await;
+    Json(note).into_response()
 }
 
 async fn inbox(State(state): State<AppState>) -> impl IntoResponse {
@@ -134,6 +180,7 @@ async fn status(State(state): State<AppState>) -> impl IntoResponse {
         "url": state.join_url(),
         "save_dir": state.save_dir().await,
         "peers": state.all_peers().await,
+        "clips": state.clips().await,
     }))
 }
 
@@ -242,6 +289,7 @@ async fn handle_socket(state: AppState, socket: WebSocket, query: WsQuery, addr:
         "url": state.join_url(),
         "save_dir": state.save_dir().await,
         "peers": state.all_peers().await,
+        "clips": state.clips().await,
     });
     let _ = sender.send(Message::Text(hello.to_string().into())).await;
 

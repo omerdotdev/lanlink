@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{broadcast, oneshot, RwLock};
@@ -7,6 +7,8 @@ use uuid::Uuid;
 
 pub const HTTP_PORT: u16 = 7420;
 pub const SERVICE_TYPE: &str = "_lanlink._tcp.local.";
+pub const MAX_CLIPS: usize = 50;
+pub const MAX_CLIP_CHARS: usize = 8000;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -21,8 +23,17 @@ pub struct Inner {
     pub web_clients: RwLock<HashMap<String, Peer>>,
     pub pending: RwLock<HashMap<String, PendingOffer>>,
     pub outbound: RwLock<HashMap<String, OutboundFile>>,
+    pub clips: RwLock<VecDeque<ClipNote>>,
     pub events: broadcast::Sender<WsEvent>,
     pub save_dir: RwLock<PathBuf>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ClipNote {
+    pub id: String,
+    pub text: String,
+    pub from: String,
+    pub created_at: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -98,6 +109,12 @@ pub enum WsEvent {
         id: Option<String>,
         message: String,
     },
+    Clip {
+        id: String,
+        text: String,
+        from: String,
+        created_at: u64,
+    },
 }
 
 impl AppState {
@@ -115,6 +132,7 @@ impl AppState {
                 web_clients: RwLock::new(HashMap::new()),
                 pending: RwLock::new(HashMap::new()),
                 outbound: RwLock::new(HashMap::new()),
+                clips: RwLock::new(VecDeque::new()),
                 events,
                 save_dir: RwLock::new(save_dir),
             }),
@@ -155,6 +173,33 @@ impl AppState {
     pub async fn broadcast_peers(&self) {
         let peers = self.all_peers().await;
         self.emit(WsEvent::Peers { peers });
+    }
+
+    pub async fn clips(&self) -> Vec<ClipNote> {
+        self.inner.clips.read().await.iter().cloned().collect()
+    }
+
+    pub async fn push_clip(&self, from: String, text: String) -> ClipNote {
+        let note = ClipNote {
+            id: Uuid::new_v4().to_string(),
+            text,
+            from,
+            created_at: now_ms(),
+        };
+        {
+            let mut clips = self.inner.clips.write().await;
+            clips.push_front(note.clone());
+            while clips.len() > MAX_CLIPS {
+                clips.pop_back();
+            }
+        }
+        self.emit(WsEvent::Clip {
+            id: note.id.clone(),
+            text: note.text.clone(),
+            from: note.from.clone(),
+            created_at: note.created_at,
+        });
+        note
     }
 
     pub fn join_url(&self) -> String {
@@ -225,6 +270,13 @@ pub fn default_name() -> String {
         .and_then(|h| h.into_string().ok())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "Lanlink device".into())
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 pub fn lan_ip() -> String {

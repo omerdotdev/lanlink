@@ -14,6 +14,14 @@ type Hello = {
   url: string;
   save_dir: string;
   peers: Peer[];
+  clips?: ClipNote[];
+};
+
+type ClipNote = {
+  id: string;
+  text: string;
+  from: string;
+  created_at: number;
 };
 
 type Incoming = {
@@ -34,7 +42,8 @@ type EventMsg =
   | { type: "progress"; id: string; done: number; total: number; direction: string; filename: string }
   | { type: "complete"; id: string; path?: string | null; filename: string }
   | { type: "declined"; id: string }
-  | { type: "error"; id?: string | null; message: string };
+  | { type: "error"; id?: string | null; message: string }
+  | { type: "clip"; id: string; text: string; from: string; created_at: number };
 
 const peersEl = document.querySelector("#peers") as HTMLUListElement;
 const emptyPeers = document.querySelector("#empty-peers") as HTMLParagraphElement;
@@ -74,6 +83,11 @@ const selectedDeviceCount = document.querySelector("#selected-device-count") as 
 const viewThumbnails = document.querySelector("#view-thumbnails") as HTMLButtonElement;
 const viewList = document.querySelector("#view-list") as HTMLButtonElement;
 const clearTransfers = document.querySelector("#clear-transfers") as HTMLButtonElement;
+const clipText = document.querySelector("#clip-text") as HTMLTextAreaElement;
+const shareClip = document.querySelector("#share-clip") as HTMLButtonElement;
+const clipsEl = document.querySelector("#clips") as HTMLUListElement;
+const emptyClips = document.querySelector("#empty-clips") as HTMLParagraphElement;
+const clipStatus = document.querySelector("#clip-status") as HTMLParagraphElement;
 const isPhone = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 let selfId = "";
@@ -86,6 +100,7 @@ let chooseThenSend = false;
 let sendingBatch = false;
 const selectedPeerIds = new Set<string>();
 const decidedIncomingIds = new Set<string>();
+let clips: ClipNote[] = [];
 const isHost = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 document.body.classList.toggle("is-guest", !isHost);
 
@@ -367,6 +382,135 @@ function updateSendControls() {
   sendSelectedBtn.disabled = count === 0 || sendingBatch;
 }
 
+function appendLinkedText(target: HTMLElement, value: string) {
+  const pattern = /\bhttps?:\/\/[^\s]+/gi;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(value))) {
+    if (match.index > last) {
+      target.append(value.slice(last, match.index));
+    }
+    let href = match[0];
+    const trailing = href.match(/[),.;!?]+$/);
+    if (trailing) {
+      href = href.slice(0, -trailing[0].length);
+    }
+    const link = document.createElement("a");
+    link.href = href;
+    link.textContent = href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    target.append(link);
+    if (trailing) target.append(trailing[0]);
+    last = match.index + match[0].length;
+  }
+  if (last < value.length) target.append(value.slice(last));
+}
+
+function renderClips() {
+  clipsEl.replaceChildren();
+  emptyClips.hidden = clips.length > 0;
+  for (const note of clips) {
+    const li = document.createElement("li");
+    li.className = "clip-item";
+    const body = document.createElement("div");
+    body.className = "clip-body";
+    const text = document.createElement("p");
+    text.className = "clip-text";
+    appendLinkedText(text, note.text);
+    const meta = document.createElement("span");
+    meta.className = "clip-meta";
+    const when = new Date(note.created_at).toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    meta.textContent = `${note.from} · ${when}`;
+    body.append(text, meta);
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "clip-copy";
+    copyBtn.setAttribute("aria-label", "Copy note");
+    copyBtn.innerHTML =
+      '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.2"></rect><path d="M10.5 5.5V4.2A1.2 1.2 0 0 0 9.3 3H4.2A1.2 1.2 0 0 0 3 4.2v5.1A1.2 1.2 0 0 0 4.2 10.5H5.5"></path></svg>';
+    copyBtn.addEventListener("click", async () => {
+      const ok = await copyText(note.text);
+      copyBtn.setAttribute("aria-label", ok ? "Copied" : "Copy failed");
+      copyBtn.classList.toggle("copied", ok);
+      window.setTimeout(() => {
+        copyBtn.setAttribute("aria-label", "Copy note");
+        copyBtn.classList.remove("copied");
+      }, 1400);
+    });
+    li.append(body, copyBtn);
+    clipsEl.append(li);
+  }
+}
+
+function addClip(note: ClipNote) {
+  if (clips.some((item) => item.id === note.id)) return;
+  clips = [note, ...clips].slice(0, 50);
+  renderClips();
+}
+
+function replaceClips(notes: ClipNote[]) {
+  clips = notes.slice(0, 50);
+  renderClips();
+}
+
+async function copyText(text: string): Promise<boolean> {
+  if (!text) return false;
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const helper = document.createElement("textarea");
+    helper.value = text;
+    helper.setAttribute("readonly", "");
+    helper.style.position = "fixed";
+    helper.style.left = "-9999px";
+    document.body.append(helper);
+    helper.select();
+    const ok = document.execCommand("copy");
+    helper.remove();
+    return ok;
+  }
+}
+
+async function shareBoardNote() {
+  const text = clipText.value.trim();
+  if (!text) {
+    clipStatus.textContent = "Paste something first.";
+    return;
+  }
+  shareClip.disabled = true;
+  clipStatus.textContent = "";
+  try {
+    const res = await fetch("/api/clips", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text,
+        from_name: isHost ? nameInput.value || "Lanlink" : isPhone ? "Phone" : "Browser",
+      }),
+    });
+    if (!res.ok) {
+      clipStatus.textContent = await res.text();
+      return;
+    }
+    const note = (await res.json()) as ClipNote;
+    addClip(note);
+    clipText.value = "";
+    clipStatus.textContent = "Shared.";
+    window.setTimeout(() => {
+      if (clipStatus.textContent === "Shared.") clipStatus.textContent = "";
+    }, 1600);
+  } catch {
+    clipStatus.textContent = "Could not share.";
+  } finally {
+    shareClip.disabled = false;
+  }
+}
+
 function renderPeers() {
   applyGuestCopy();
   peersEl.innerHTML = "";
@@ -614,6 +758,7 @@ function onEvent(ev: EventMsg) {
       qr.src = `/api/qr.svg?t=${Date.now()}`;
       peers = ev.peers;
       renderPeers();
+      if (ev.clips) replaceClips(ev.clips);
       break;
     case "peers":
       peers = ev.peers;
@@ -676,6 +821,9 @@ function onEvent(ev: EventMsg) {
         filename: "Transfer",
         status: "error",
       });
+      break;
+    case "clip":
+      addClip(ev);
       break;
   }
 }
@@ -844,14 +992,20 @@ clearTransfers.addEventListener("click", () => {
 copyUrl.addEventListener("click", async () => {
   const text = joinUrl.textContent ?? "";
   if (!text || text === "Starting…") return;
-  try {
-    await navigator.clipboard.writeText(text);
-    copyUrl.textContent = "Copied";
+  const ok = await copyText(text);
+  copyUrl.textContent = ok ? "Copied" : "Copy failed";
+  if (ok) {
     setTimeout(() => {
       copyUrl.textContent = "Copy address";
     }, 1500);
-  } catch {
-    copyUrl.textContent = "Copy failed";
+  }
+});
+
+shareClip.addEventListener("click", () => void shareBoardNote());
+clipText.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    void shareBoardNote();
   }
 });
 
@@ -890,10 +1044,11 @@ function connect() {
 connect();
 applyGuestCopy();
 renderActivity();
+renderClips();
 updateSendControls();
 void fetch("/api/status")
   .then((r) => r.json())
-  .then((status: { id: string; name: string; url: string; save_dir: string; peers: Peer[] }) => {
+  .then((status: { id: string; name: string; url: string; save_dir: string; peers: Peer[]; clips?: ClipNote[] }) => {
     hostId = status.id;
     if (!joinUrl.textContent || joinUrl.textContent === "Starting…") {
       joinUrl.textContent = status.url;
@@ -903,6 +1058,9 @@ void fetch("/api/status")
     }
     if (!peers.length && Array.isArray(status.peers)) {
       peers = status.peers;
+    }
+    if (Array.isArray(status.clips) && status.clips.length) {
+      replaceClips(status.clips);
     }
     renderPeers();
   })

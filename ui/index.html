@@ -95,6 +95,31 @@
         </div>
       </section>
 
+      <section class="block" aria-labelledby="board-heading">
+        <div class="block-head">
+          <p class="section-kicker">Board</p>
+          <h2 id="board-heading">Shared notes</h2>
+          <p class="lede">
+            Paste a line and share it. Every connected device sees the list. Copy any item.
+          </p>
+        </div>
+        <div class="card board-card">
+          <div class="board-head">
+            <label class="board-label" for="clip-text">Note</label>
+            <button type="button" class="board-send" id="share-clip" aria-label="Send note">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.2 8.1 13.6 2.4l-3.2 11.2-2.6-3.6-3.6-1.9Z"></path>
+                <path d="M7.8 9.9 13.6 2.4"></path>
+              </svg>
+            </button>
+          </div>
+          <textarea id="clip-text" rows="3" maxlength="8000" placeholder="Paste a link, code, or a short message"></textarea>
+          <p class="muted" id="clip-status"></p>
+          <ul id="clips" class="clips"></ul>
+          <p class="muted" id="empty-clips">No shared notes yet.</p>
+        </div>
+      </section>
+
       <section class="block host-only" aria-labelledby="connect-heading">
         <div class="block-head">
           <p class="section-kicker">Connect</p>

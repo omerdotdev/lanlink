@@ -54,9 +54,16 @@
         </div>
       </header>
 
-      <p class="network-warn" id="network-warn" hidden>
-        Windows marks this network as Public. Do not share the join URL here. Use a private/home network instead.
-      </p>
+      <div class="network-warn" id="network-warn" hidden role="alert">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3.4 2.4 20.2h19.2L12 3.4Z"></path>
+          <path d="M12 9.4v5.2"></path>
+          <path d="M12 17.4h.01"></path>
+        </svg>
+        <p>
+          Windows marks this network as Public. Do not share the join URL here. Use a private/home network instead.
+        </p>
+      </div>
 
       <section class="incoming" id="incoming-wrap" hidden>
         <div>

@@ -477,8 +477,42 @@ html[data-skin="liquid"] body::before {
   margin-bottom: 28px;
 }
 
-html[data-theme="dark"] .network-warn {
+.network-warn:not([hidden]) {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid #d4a017;
+  background: #ffe58a;
   color: #3a2200;
+  box-shadow: 0 8px 20px rgba(90, 60, 0, 0.12);
+}
+
+.network-warn svg {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.network-warn p {
+  margin: 0;
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+html[data-theme="dark"] .network-warn:not([hidden]) {
+  background: #c98912;
+  border-color: #f0c14b;
+  color: #1d1200;
 }
 
 .brand {

@@ -112,7 +112,7 @@ let clips: ClipNote[] = [];
 const isHost = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 document.body.classList.toggle("is-guest", !isHost);
 
-type Cue = "send" | "receive" | "note" | "clear";
+type Cue = "send" | "receive" | "note" | "clear" | "copy";
 let audioCtx: AudioContext | null = null;
 
 function unlockAudio() {
@@ -144,24 +144,23 @@ function playCue(kind: Cue) {
   unlockAudio();
   if (!audioCtx) return;
   const t = audioCtx.currentTime;
-  const notes =
-    kind === "send"
-      ? [
-          [880, 0, 0.07],
-          [1175, 0.07, 0.08],
-        ]
-      : kind === "receive"
-        ? [
-            [523, 0, 0.08],
-            [784, 0.08, 0.1],
-          ]
-        : kind === "note"
-          ? [[1047, 0, 0.055]]
-          : [
-              [392, 0, 0.05],
-              [262, 0.05, 0.09],
-            ];
-  for (const [freq, delay, dur] of notes) beep(freq, t + delay, dur);
+  const notes: Record<Cue, number[][]> = {
+    send: [
+      [880, 0, 0.07],
+      [1175, 0.07, 0.08],
+    ],
+    receive: [
+      [523, 0, 0.08],
+      [784, 0.08, 0.1],
+    ],
+    note: [[1047, 0, 0.055]],
+    clear: [
+      [392, 0, 0.05],
+      [262, 0.05, 0.09],
+    ],
+    copy: [[1319, 0, 0.05]],
+  };
+  for (const [freq, delay, dur] of notes[kind]) beep(freq, t + delay, dur);
 }
 
 document.addEventListener("pointerdown", unlockAudio, { passive: true });
@@ -506,6 +505,7 @@ function renderClips() {
       const ok = await copyText(note.text);
       copyBtn.setAttribute("aria-label", ok ? "Copied" : "Copy failed");
       copyBtn.classList.toggle("copied", ok);
+      if (ok) playCue("copy");
       window.setTimeout(() => {
         copyBtn.setAttribute("aria-label", "Copy note");
         copyBtn.classList.remove("copied");

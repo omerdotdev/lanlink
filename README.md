@@ -48,6 +48,34 @@ powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 
 Allow TCP **7420** and UDP **5353** (mDNS) through the OS firewall **on a private/LAN profile** if devices cannot see each other. Do not forward those ports on the router.
 
+## How Rust fits in
+
+Rust is the engine. TypeScript is the face. Tauri opens a native window and loads the UI, then Rust starts an Axum server on port **7420**. That server owns discovery, file offers, Accept/Decline, notes, and WebSockets. The UI only calls `/api/...`.
+
+A phone never runs Rust. It opens `http://<lan-ip>:7420` in a browser. The HTML/JS is served by the Rust process on the PC. All transfers still go through that host.
+
+```mermaid
+flowchart LR
+  subgraph desktop["Desktop app - one process"]
+    UI["UI TypeScript in WebView"]
+    Rust["Rust Tauri + Axum :7420"]
+    UI -->|"HTTP / WebSocket localhost"| Rust
+  end
+  Phone["Phone / other browser"] -->|"HTTP / WebSocket on LAN"| Rust
+  OtherPC["Other Lanlink desktop"] -->|"mDNS + HTTP"| Rust
+```
+
+**Legend:** the left box is one installed app. Rust listens on `0.0.0.0:7420`. The window talks to `127.0.0.1`. Other devices talk to the LAN IP.
+
+| Piece | Language | Role |
+|---|---|---|
+| `ui/` | TypeScript | Buttons, themes, file picker, notes list |
+| `src-tauri/src/server.rs` | Rust | HTTP + WebSocket API |
+| `src-tauri/src/transfer.rs` | Rust | Stream files after Accept |
+| `src-tauri/src/discovery.rs` | Rust | mDNS find other desktops |
+| `src-tauri/src/state.rs` | Rust | Peers, offers, notes, save folder |
+| `src-tauri/src/lib.rs` | Rust | Start Tauri window + spawn the server |
+
 ## Project layout
 
 - `src-tauri/src/lib.rs` — starts the Tauri app

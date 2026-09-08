@@ -1,58 +1,57 @@
 # Lanlink
 
-Share files between devices on the same local network. Written in Rust.
+Send a file or a short note to another device on the same Wi‑Fi. Install the desktop app on a computer; phones and extra machines just open a page in the browser. No account, no cloud.
 
-- **Desktop:** Windows and Linux (Tauri 2)
-- **Phone / other computer:** open the join URL or scan the QR code in a browser — no mobile app yet
-- **Laptop to laptop:** each app discovers the other with mDNS and sends files over HTTP
+Stay on a network you trust. Nothing is encrypted, so don’t put this on the public internet. Details are in [SECURITY.md](SECURITY.md).
 
-This is **local-network only**. There are no accounts and no encryption. File data waits for Accept. Shared notes are visible to everyone on the join URL. Do not expose port `7420` to the internet.
+## Features
 
-See **[SECURITY.md](SECURITY.md)** for measures, ports, and remaining work.
+- Send files between computers, or from a computer to a phone browser (and back)
+- Recipient taps **Accept** before any file data moves
+- Pick several nearby devices and send the same file to each
+- Shared notes board: paste a line, everyone sees it, copy or open links
+- QR code and join URL so a phone doesn’t need an app
+- Desktops find each other on the LAN automatically
+- Themes, light/dark, transfer history
+- Programs and scripts are blocked; Windows warns if the network is marked Public
 
-## Requirements
+## Run it
 
-- [Rust](https://rustup.rs) (stable)
-- [Node.js](https://nodejs.org) 18+
-- [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) (WebView2 on Windows; webkitgtk on Linux)
-- **Windows:** [Visual Studio 2022 Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the **Desktop development with C++** workload (`link.exe`). A quiet winget install of this failed here with exit code 1603 — run the installer by hand if `cargo` says the MSVC linker was not found.
-
-## Run (desktop)
+You need [Rust](https://rustup.rs), [Node.js](https://nodejs.org) 18+, and [Tauri 2’s extras](https://v2.tauri.app/start/prerequisites/) (WebView2 on Windows, webkitgtk on Linux). On Windows, install [Visual Studio 2022 Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with **Desktop development with C++**. If `cargo` says `link.exe` is missing, run that installer by hand.
 
 ```bash
 npm install
 npm run desktop
 ```
 
-That builds the UI, starts the LAN server on port **7420**, and opens the desktop window.
+That builds the UI, starts the LAN server on port **7420**, and opens the window.
 
-Linux extra packages (Debian/Ubuntu):
-
-```bash
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-```
-
-On this Windows machine, after C++ tools and the Windows SDK are installed:
+Windows shortcut after the C++ tools are in:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 ```
 
+Debian/Ubuntu extras:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+If devices don’t see each other, allow **TCP 7420** and **UDP 5353** on a private/home firewall profile. Don’t forward those ports on the router.
+
 ## How it works
 
-1. The app advertises `_lanlink._tcp` on mDNS and listens on `0.0.0.0:7420`.
-2. Nearby Lanlink desktops show up in **Devices nearby**.
-3. Sending a file asks the receiver to **Accept** or **Decline**. Programs and scripts are blocked. Accepted files are written under `Downloads/Lanlink`.
-4. A phone on the same Wi‑Fi opens `http://<your-lan-ip>:7420` (or the QR code) and can send to this computer, or receive a file you send to that browser session.
-5. **Shared notes** broadcasts a line of text to every connected device. There is no Accept step for notes.
+1. The desktop app shows up on the LAN and listens on port 7420.
+2. Nearby computers appear in the device list. A phone joins by scanning the QR code or opening the address.
+3. You pick a file and one or more devices. Each recipient gets Accept / Decline. Accepted files land in `Downloads/Lanlink` on a computer, or as a download in the browser.
+4. Shared notes skip Accept: paste, send, and the line shows up on every connected device.
 
-Allow TCP **7420** and UDP **5353** (mDNS) through the OS firewall **on a private/LAN profile** if devices cannot see each other. Do not forward those ports on the router.
+## Where Rust sits
 
-## How Rust fits in
+The window you click around in is TypeScript. The LAN work is Rust: Tauri opens the window, then an Axum server on port 7420 handles files, notes, and who is nearby. The UI just talks to that server.
 
-Rust is the engine. TypeScript is the face. Tauri opens a native window and loads the UI, then Rust starts an Axum server on port **7420**. That server owns discovery, file offers, Accept/Decline, notes, and WebSockets. The UI only calls `/api/...`.
-
-A phone never runs Rust. It opens `http://<lan-ip>:7420` in a browser. The HTML/JS is served by the Rust process on the PC. All transfers still go through that host.
+A phone never runs Rust. It loads the same page from the computer. Transfers still go through that machine.
 
 ```mermaid
 flowchart LR
@@ -65,25 +64,16 @@ flowchart LR
   OtherPC["Other Lanlink desktop"] -->|"mDNS + HTTP"| Rust
 ```
 
-**Legend:** the left box is one installed app. Rust listens on `0.0.0.0:7420`. The window talks to `127.0.0.1`. Other devices talk to the LAN IP.
+The left box is one installed app. The window uses `127.0.0.1`. Phones and other computers use the LAN address.
 
-| Piece | Language | Role |
+| Piece | Language | What it does |
 |---|---|---|
-| `ui/` | TypeScript | Buttons, themes, file picker, notes list |
-| `src-tauri/src/server.rs` | Rust | HTTP + WebSocket API |
-| `src-tauri/src/transfer.rs` | Rust | Stream files after Accept |
-| `src-tauri/src/discovery.rs` | Rust | mDNS find other desktops |
+| `ui/` | TypeScript | Screen: send, notes, themes, history |
+| `src-tauri/src/lib.rs` | Rust | Starts the window and the server |
+| `src-tauri/src/server.rs` | Rust | HTTP and WebSocket API |
+| `src-tauri/src/transfer.rs` | Rust | Moves file bytes after Accept |
+| `src-tauri/src/discovery.rs` | Rust | Finds other desktops on the LAN |
 | `src-tauri/src/state.rs` | Rust | Peers, offers, notes, save folder |
-| `src-tauri/src/lib.rs` | Rust | Start Tauri window + spawn the server |
-
-## Project layout
-
-- `src-tauri/src/lib.rs` — starts the Tauri app
-- `src-tauri/src/server.rs` — Axum HTTP/WebSocket API + static UI
-- `src-tauri/src/discovery.rs` — mDNS advertise/browse
-- `src-tauri/src/transfer.rs` — outbound HTTP send + receive streaming
-- `ui/` — Vite + vanilla TypeScript frontend
-- `SECURITY.md` — trust model, ports, current controls, later TODOs
 
 ## License
 

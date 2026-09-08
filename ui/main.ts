@@ -101,8 +101,10 @@ const isPhone = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 let selfId = "";
 let hostId = "";
 let peers: Peer[] = [];
-let selectedFile: File | null = null;
+const MAX_SEND_FILES = 5;
+let selectedFiles: File[] = [];
 let pendingIncoming: Incoming | null = null;
+const incomingQueue: Incoming[] = [];
 let socket: WebSocket | null = null;
 let chooseThenSend = false;
 let sendingBatch = false;
@@ -421,12 +423,12 @@ function showNetworkWarn(publicNetwork: boolean | undefined) {
 
 function applyGuestCopy() {
   if (isHost) return;
-  sendHeading.textContent = "Choose a file, then a device";
+  sendHeading.textContent = "Choose files, then a device";
   sendLede.textContent =
-    "Pick a file here, then tap Send on any computer or browser in the list. That device will get Accept / Decline.";
+    "Pick one or more files here, then tap Send on any computer or browser in the list. That device will get Accept / Decline for each file.";
   nearbyTitle.textContent = "Nearby devices";
-  if (fileHelp) fileHelp.textContent = "Drop a file here, or browse. Then send it to a device on the right. Programs and scripts are blocked.";
-  if (fileLabel) fileLabel.textContent = "Choose file";
+  if (fileHelp) fileHelp.textContent = "Drop up to 5 files here, or browse. Then send them to a device on the right. Programs and scripts are blocked.";
+  if (fileLabel) fileLabel.textContent = "Choose files";
 }
 
 function peerKindLabel(peer: Peer): string {
@@ -443,11 +445,18 @@ function updateSendControls() {
   const count = selectedPeerIds.size;
   selectedDeviceCount.textContent =
     count === 0 ? "Select one or more devices" : `${count} device${count === 1 ? "" : "s"} selected`;
-  sendSelectedBtn.textContent = selectedFile
-    ? count > 1
-      ? `Send to ${count} devices`
-      : "Send"
-    : "Choose file";
+  const files = selectedFiles.length;
+  if (!files) {
+    sendSelectedBtn.textContent = "Choose files";
+  } else if (count > 1 && files > 1) {
+    sendSelectedBtn.textContent = `Send ${files} files to ${count} devices`;
+  } else if (count > 1) {
+    sendSelectedBtn.textContent = `Send to ${count} devices`;
+  } else if (files > 1) {
+    sendSelectedBtn.textContent = `Send ${files} files`;
+  } else {
+    sendSelectedBtn.textContent = "Send";
+  }
   sendSelectedBtn.disabled = count === 0 || sendingBatch;
 }
 
@@ -692,13 +701,7 @@ function blockedExecutable(filename: string): boolean {
     .some((part) => blocked.has(part.toLowerCase()));
 }
 
-async function sendTo(peerId: string) {
-  const file = fileInput.files?.[0] ?? selectedFile ?? null;
-  if (!file) {
-    chooseThenSend = true;
-    fileInput.click();
-    return;
-  }
+async function sendTo(peerId: string, file: File) {
   if (!peerId && hostId) peerId = hostId;
   const filename = file.name?.trim() || `upload-${Date.now()}`;
   if (blockedExecutable(filename)) {
@@ -771,8 +774,7 @@ async function uploadAccepted(id: string) {
 
 async function sendSelected() {
   if (selectedPeerIds.size === 0 || sendingBatch) return;
-  const file = fileInput.files?.[0] ?? selectedFile;
-  if (!file) {
+  if (!selectedFiles.length) {
     chooseThenSend = true;
     fileInput.click();
     return;
@@ -780,7 +782,13 @@ async function sendSelected() {
   sendingBatch = true;
   updateSendControls();
   const recipients = [...selectedPeerIds];
-  await Promise.allSettled(recipients.map((peerId) => sendTo(peerId)));
+  const jobs: Promise<void>[] = [];
+  for (const file of selectedFiles.slice(0, MAX_SEND_FILES)) {
+    for (const peerId of recipients) {
+      jobs.push(sendTo(peerId, file));
+    }
+  }
+  await Promise.allSettled(jobs);
   sendingBatch = false;
   updateSendControls();
 }
@@ -838,17 +846,29 @@ function knowsTransfer(id: string): boolean {
 }
 
 function closeIncomingIfMatching(id: string) {
+  incomingQueue.splice(
+    0,
+    incomingQueue.length,
+    ...incomingQueue.filter((item) => item.id !== id),
+  );
   if (pendingIncoming?.id !== id) return;
   incomingWrap.hidden = true;
   pendingIncoming = null;
+  presentNextIncoming();
+}
+
+function presentNextIncoming() {
+  while (incomingQueue.length) {
+    const next = incomingQueue.shift();
+    if (next && !decidedIncomingIds.has(next.id)) {
+      showIncoming(next);
+      return;
+    }
+  }
 }
 
 function showIncoming(ev: Incoming) {
   if (decidedIncomingIds.has(ev.id)) return;
-  pendingIncoming = ev;
-  incomingWrap.hidden = false;
-  incomingWrap.removeAttribute("hidden");
-  incomingText.textContent = `${ev.from} wants to send ${ev.filename} (${fmtSize(ev.size)})`;
   updateActivity(ev.id, {
     filename: ev.filename,
     direction: "receive",
@@ -856,6 +876,17 @@ function showIncoming(ev: Incoming) {
     peer: ev.from,
     size: ev.size,
   });
+  if (pendingIncoming && pendingIncoming.id !== ev.id) {
+    if (!incomingQueue.some((item) => item.id === ev.id)) incomingQueue.push(ev);
+    return;
+  }
+  pendingIncoming = ev;
+  incomingWrap.hidden = false;
+  incomingWrap.removeAttribute("hidden");
+  const queued = incomingQueue.length;
+  incomingText.textContent = queued
+    ? `${ev.from} wants to send ${ev.filename} (${fmtSize(ev.size)}). ${queued} more waiting.`
+    : `${ev.from} wants to send ${ev.filename} (${fmtSize(ev.size)})`;
 }
 
 function onEvent(ev: EventMsg) {
@@ -966,10 +997,12 @@ acceptBtn.addEventListener("click", async () => {
       return;
     }
     if (body.download) {
+      presentNextIncoming();
       await saveReceivedFile(incoming.id, body.download, incoming.filename, incoming.size);
       return;
     }
     updateActivity(incoming.id, { status: "receiving" });
+    presentNextIncoming();
   } catch (err) {
     decidedIncomingIds.delete(incoming.id);
     showIncoming(incoming);
@@ -991,7 +1024,9 @@ declineBtn.addEventListener("click", async () => {
       decidedIncomingIds.delete(incoming.id);
       showIncoming(incoming);
       updateActivity(incoming.id, { status: "error" });
+      return;
     }
+    presentNextIncoming();
   } catch {
     decidedIncomingIds.delete(incoming.id);
     showIncoming(incoming);
@@ -1036,23 +1071,34 @@ browseSaveDir.addEventListener("click", () => {
     "Paste or type a folder path, then save. Incoming files on this computer will go there.";
 });
 
-function takeSelectedFile(file: File | null) {
-  if (file && blockedExecutable(file.name)) {
-    selectedFile = null;
+function takeSelectedFiles(list: FileList | File[] | null) {
+  const incoming = list ? [...list] : [];
+  const blocked = incoming.filter((file) => blockedExecutable(file.name));
+  const ok = incoming.filter((file) => !blockedExecutable(file.name));
+  const overflow = Math.max(0, ok.length - MAX_SEND_FILES);
+  selectedFiles = ok.slice(0, MAX_SEND_FILES);
+  const kept = selectedFiles;
+  if (!kept.length) {
     fileInput.value = "";
-    chosen.textContent = "That file type is blocked (programs and scripts).";
-    updateSendControls();
-    return;
+    chosen.textContent = blocked.length
+      ? "That file type is blocked (programs and scripts)."
+      : "No files selected yet.";
+  } else if (kept.length === 1 && !blocked.length && !overflow) {
+    chosen.textContent = kept[0].name;
+  } else {
+    const names = kept.slice(0, 4).map((file) => file.name).join(", ");
+    const extra = kept.length > 4 ? ` +${kept.length - 4} more` : "";
+    const skip = blocked.length ? ` · ${blocked.length} blocked` : "";
+    const cap = overflow ? ` · first ${MAX_SEND_FILES} only` : "";
+    chosen.textContent = `${kept.length} files: ${names}${extra}${skip}${cap}`;
   }
-  selectedFile = file;
-  chosen.textContent = selectedFile ? selectedFile.name : "No file selected yet.";
   updateSendControls();
 }
 
 function onFileChosen() {
-  takeSelectedFile(fileInput.files?.[0] ?? null);
+  takeSelectedFiles(fileInput.files);
   renderPeers();
-  if (selectedFile && chooseThenSend) {
+  if (selectedFiles.length && chooseThenSend) {
     chooseThenSend = false;
     void sendSelected();
   }
@@ -1068,7 +1114,7 @@ drop.addEventListener("dragleave", () => drop.classList.remove("hover"));
 drop.addEventListener("drop", (e) => {
   e.preventDefault();
   drop.classList.remove("hover");
-  takeSelectedFile(e.dataTransfer?.files[0] ?? null);
+  takeSelectedFiles(e.dataTransfer?.files ?? null);
   renderPeers();
 });
 
@@ -1226,8 +1272,9 @@ async function pollInbox() {
       incoming?: Incoming[];
     };
     if (data.id) hostId = data.id;
-    const first = data.incoming?.[0];
-    if (first && !pendingIncoming) showIncoming(first);
+    for (const item of data.incoming ?? []) {
+      if (!decidedIncomingIds.has(item.id)) showIncoming(item);
+    }
   } catch {
     /* desktop may still be starting */
   }

@@ -8,7 +8,7 @@ Stay on a network you trust. Nothing is encrypted, so don’t put this on the pu
 
 - Send files between computers, or from a computer to a phone browser (and back)
 - Recipient taps **Accept** before any file data moves
-- Pick several nearby devices and send the same file to each
+- Pick up to 5 files and several nearby devices; each recipient Accepts per file
 - Shared notes board: paste a line, everyone sees it, copy or open links
 - QR code and join URL so a phone doesn’t need an app
 - Desktops find each other on the LAN automatically

@@ -80,19 +80,19 @@
       <section class="block" aria-labelledby="send-heading">
         <div class="block-head">
           <p class="section-kicker">Send</p>
-          <h2 id="send-heading">Choose a file, then a device</h2>
+          <h2 id="send-heading">Choose files, then a device</h2>
           <p class="lede" id="send-lede">
-            Start with the file on this device. After it is selected, nearby computers and
+            Start with files on this device. After they are selected, nearby computers and
             browsers appear as destinations you can send to.
           </p>
         </div>
         <div class="grid">
           <div class="card drop" id="drop">
-            <h3>Your file</h3>
-            <p class="muted" id="file-help">Drop a file here, or browse. PDFs, pictures, and other types are all fine. Programs and scripts are blocked.</p>
-            <input id="file" class="file-native" type="file" />
-            <label class="file-btn" for="file" id="file-label">Choose file</label>
-            <p id="chosen" class="muted">No file selected yet.</p>
+            <h3>Your files</h3>
+            <p class="muted" id="file-help">Drop up to 5 files here, or browse. PDFs, pictures, and other types are all fine. Programs and scripts are blocked.</p>
+            <input id="file" class="file-native" type="file" multiple />
+            <label class="file-btn" for="file" id="file-label">Choose files</label>
+            <p id="chosen" class="muted">No files selected yet.</p>
           </div>
           <div class="card">
             <h3 id="nearby-title">Nearby devices</h3>

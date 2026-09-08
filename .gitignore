@@ -1,0 +1,12 @@
+/target
+/dist
+/node_modules
+src-tauri/target
+src-tauri/gen
+*.exe
+.DS_Store
+Thumbs.db
+.env
+.idea
+.vscode
+*.pdb

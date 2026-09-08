@@ -118,6 +118,7 @@ pub enum WsEvent {
         from: String,
         created_at: u64,
     },
+    ClipsCleared {},
 }
 
 impl AppState {
@@ -204,6 +205,11 @@ impl AppState {
             created_at: note.created_at,
         });
         note
+    }
+
+    pub async fn clear_clips(&self) {
+        self.inner.clips.write().await.clear();
+        self.emit(WsEvent::ClipsCleared {});
     }
 
     pub async fn allow_clip(&self, ip: &str) -> bool {

@@ -44,7 +44,8 @@ type EventMsg =
   | { type: "complete"; id: string; path?: string | null; filename: string }
   | { type: "declined"; id: string }
   | { type: "error"; id?: string | null; message: string }
-  | { type: "clip"; id: string; text: string; from: string; created_at: number };
+  | { type: "clip"; id: string; text: string; from: string; created_at: number }
+  | { type: "clips_cleared" };
 
 const peersEl = document.querySelector("#peers") as HTMLUListElement;
 const emptyPeers = document.querySelector("#empty-peers") as HTMLParagraphElement;
@@ -90,6 +91,7 @@ const viewList = document.querySelector("#view-list") as HTMLButtonElement;
 const clearTransfers = document.querySelector("#clear-transfers") as HTMLButtonElement;
 const clipText = document.querySelector("#clip-text") as HTMLTextAreaElement;
 const shareClip = document.querySelector("#share-clip") as HTMLButtonElement;
+const clearClipsBtn = document.querySelector("#clear-clips") as HTMLButtonElement;
 const clipsEl = document.querySelector("#clips") as HTMLUListElement;
 const emptyClips = document.querySelector("#empty-clips") as HTMLParagraphElement;
 const clipStatus = document.querySelector("#clip-status") as HTMLParagraphElement;
@@ -465,6 +467,28 @@ function addClip(note: ClipNote) {
 function replaceClips(notes: ClipNote[]) {
   clips = notes.slice(0, 50);
   renderClips();
+}
+
+async function clearBoardNotes() {
+  if (!window.confirm("Clear the shared board for everyone on this LAN?")) return;
+  clearClipsBtn.disabled = true;
+  clipStatus.textContent = "";
+  try {
+    const res = await fetch("/api/clips", { method: "DELETE" });
+    if (!res.ok) {
+      clipStatus.textContent = await res.text();
+      return;
+    }
+    replaceClips([]);
+    clipStatus.textContent = "Board cleared.";
+    window.setTimeout(() => {
+      if (clipStatus.textContent === "Board cleared.") clipStatus.textContent = "";
+    }, 1600);
+  } catch {
+    clipStatus.textContent = "Could not clear.";
+  } finally {
+    clearClipsBtn.disabled = false;
+  }
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -855,6 +879,9 @@ function onEvent(ev: EventMsg) {
     case "clip":
       addClip(ev);
       break;
+    case "clips_cleared":
+      replaceClips([]);
+      break;
   }
 }
 
@@ -1061,6 +1088,7 @@ copyUrl.addEventListener("click", async () => {
 });
 
 shareClip.addEventListener("click", () => void shareBoardNote());
+clearClipsBtn.addEventListener("click", () => void clearBoardNotes());
 clipText.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();

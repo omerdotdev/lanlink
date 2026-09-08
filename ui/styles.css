@@ -853,6 +853,12 @@ button.ghost {
   font-weight: 600;
 }
 
+.board-icons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .board-send {
   width: 22px;
   height: 22px;

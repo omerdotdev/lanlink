@@ -82,7 +82,7 @@ fn router(state: AppState, dist: PathBuf) -> Router {
         .route("/api/files/{id}/download", get(download))
         .route("/api/send", post(send_local))
         .route("/api/web-offer", post(web_offer))
-        .route("/api/clips", get(list_clips).post(post_clip))
+        .route("/api/clips", get(list_clips).post(post_clip).delete(clear_clips))
         .fallback_service(static_files)
         .layer(DefaultBodyLimit::max(1024 * 1024 * 1024))
         .layer(
@@ -140,6 +140,11 @@ async fn health() -> &'static str {
 
 async fn list_clips(State(state): State<AppState>) -> impl IntoResponse {
     Json(serde_json::json!({ "clips": state.clips().await }))
+}
+
+async fn clear_clips(State(state): State<AppState>) -> impl IntoResponse {
+    state.clear_clips().await;
+    Json(serde_json::json!({ "ok": true })).into_response()
 }
 
 #[derive(Deserialize)]

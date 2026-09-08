@@ -110,12 +110,21 @@
         <div class="card board-card">
           <div class="board-head">
             <label class="board-label" for="clip-text">Note</label>
-            <button type="button" class="board-send" id="share-clip" aria-label="Send note">
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M2.2 8.1 13.6 2.4l-3.2 11.2-2.6-3.6-3.6-1.9Z"></path>
-                <path d="M7.8 9.9 13.6 2.4"></path>
-              </svg>
-            </button>
+            <div class="board-icons">
+              <button type="button" class="board-send" id="clear-clips" aria-label="Clear board">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M3 4.5h10"></path>
+                  <path d="M6 4.5V3.4A1.2 1.2 0 0 1 7.2 2.2h1.6A1.2 1.2 0 0 1 10 3.4v1.1"></path>
+                  <path d="M5.2 4.5 5.7 13A1.2 1.2 0 0 0 6.9 14.1h2.2A1.2 1.2 0 0 0 10.3 13l.5-8.5"></path>
+                </svg>
+              </button>
+              <button type="button" class="board-send" id="share-clip" aria-label="Send note">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M2.2 8.1 13.6 2.4l-3.2 11.2-2.6-3.6-3.6-1.9Z"></path>
+                  <path d="M7.8 9.9 13.6 2.4"></path>
+                </svg>
+              </button>
+            </div>
           </div>
           <textarea id="clip-text" rows="3" maxlength="8000" placeholder="Paste a link, code, or a short message"></textarea>
           <p class="muted" id="clip-status"></p>

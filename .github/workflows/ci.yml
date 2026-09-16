@@ -1,9 +1,25 @@
 name: ci
 
+# Docs-only changes can't break the build, so they skip it. Actions has no
+# YAML anchors, so the ignore list is repeated per trigger.
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - "**/*.md"
+      - "LICENSE"
+      - ".gitignore"
+      - ".editorconfig"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "LICENSE"
+      - ".gitignore"
+      - ".editorconfig"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
   workflow_dispatch:
 
 concurrency:

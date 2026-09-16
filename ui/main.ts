@@ -15,6 +15,7 @@ type Hello = {
   save_dir: string;
   peers: Peer[];
   clips?: ClipNote[];
+  incoming?: Incoming[];
   public_network?: boolean;
 };
 
@@ -31,6 +32,7 @@ type Incoming = {
   filename: string;
   size: number;
   from: string;
+  from_id?: string;
   target_id: string;
 };
 
@@ -97,6 +99,27 @@ const emptyClips = document.querySelector("#empty-clips") as HTMLParagraphElemen
 const clipStatus = document.querySelector("#clip-status") as HTMLParagraphElement;
 const networkWarn = document.querySelector("#network-warn") as HTMLElement;
 const isPhone = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+
+const WEB_ID_KEY = "lanlink-web-id";
+
+/** Guest ids must survive reloads and new tabs, or offers aimed at the old id
+ *  are delivered to nobody. localStorage first, sessionStorage as a fallback. */
+function readWebId(): string {
+  try {
+    return localStorage.getItem(WEB_ID_KEY) || sessionStorage.getItem(WEB_ID_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveWebId(id: string) {
+  try {
+    localStorage.setItem(WEB_ID_KEY, id);
+    sessionStorage.setItem(WEB_ID_KEY, id);
+  } catch {
+    /* private mode */
+  }
+}
 
 let selfId = "";
 let hostId = "";
@@ -221,6 +244,9 @@ type Xfer = {
 };
 const xfers = new Map<string, Xfer>();
 const pendingUploads = new Map<string, { file: File; filename: string }>();
+const acceptedWait = new Set<string>();
+/** Offer ids this device created, so we never present our own send as incoming. */
+const myOfferIds = new Set<string>();
 
 type ActivityStatus = "sending" | "receiving" | "waiting" | "done" | "declined" | "error" | "interrupted";
 type ActivityRecord = {
@@ -726,7 +752,7 @@ async function sendTo(peerId: string, file: File) {
         filename,
         size: file.size,
         from_name: isHost ? nameInput.value || "Lanlink" : isPhone ? "Phone" : "Browser",
-        from_id: selfId,
+        from_id: selfId || hostId,
       }),
     });
     const offerBody = (await offerRes.json().catch(() => ({}))) as {
@@ -740,7 +766,12 @@ async function sendTo(peerId: string, file: File) {
     }
     adoptTransferId(id, offerBody.id);
     id = offerBody.id;
+    // The broadcast for this offer can reach us before this response does, so
+    // claim the id and retract any banner it opened on this device.
+    myOfferIds.add(id);
+    closeIncomingIfMatching(id);
     pendingUploads.set(id, { file, filename });
+    if (acceptedWait.delete(id)) void uploadAccepted(id);
   } catch (err) {
     finishXfer(id, "error");
     updateActivity(id, { status: "error" });
@@ -833,8 +864,14 @@ function uploadForm(
 function incomingIsForUs(targetId: string): boolean {
   if (selfId && targetId === selfId) return true;
   if (isHost && hostId && targetId === hostId) return true;
-  if (isHost && !targetId.startsWith("web-")) return true;
   return false;
+}
+
+function isOwnOutgoing(ev: Pick<Incoming, "id" | "from_id">): boolean {
+  if (myOfferIds.has(ev.id)) return true;
+  if (pendingUploads.has(ev.id)) return true;
+  if (ev.from_id && (ev.from_id === selfId || (isHost && ev.from_id === hostId))) return true;
+  return activity.some((record) => record.id === ev.id && record.direction === "send");
 }
 
 function knowsTransfer(id: string): boolean {
@@ -868,6 +905,7 @@ function presentNextIncoming() {
 }
 
 function showIncoming(ev: Incoming) {
+  if (!incomingIsForUs(ev.target_id) || isOwnOutgoing(ev)) return;
   if (decidedIncomingIds.has(ev.id)) return;
   updateActivity(ev.id, {
     filename: ev.filename,
@@ -892,9 +930,11 @@ function showIncoming(ev: Incoming) {
 function onEvent(ev: EventMsg) {
   switch (ev.type) {
     case "hello":
-      selfId = ev.web_id ?? ev.id;
-      if (ev.web_id) {
-        sessionStorage.setItem("lanlink-web-id", ev.web_id);
+      if (isHost) {
+        selfId = ev.id;
+      } else if (ev.web_id) {
+        selfId = ev.web_id;
+        saveWebId(ev.web_id);
       }
       if (isHost) nameInput.value = ev.name;
       hostId = ev.id;
@@ -905,17 +945,20 @@ function onEvent(ev: EventMsg) {
       renderPeers();
       if (ev.clips) replaceClips(ev.clips);
       showNetworkWarn(ev.public_network);
+      for (const item of ev.incoming ?? []) {
+        showIncoming(item);
+      }
       break;
     case "peers":
       peers = ev.peers;
       renderPeers();
       break;
     case "incoming":
-      if (!incomingIsForUs(ev.target_id)) return;
       showIncoming(ev);
       break;
     case "accepted":
-      void uploadAccepted(ev.id);
+      if (pendingUploads.has(ev.id)) void uploadAccepted(ev.id);
+      else acceptedWait.add(ev.id);
       break;
     case "ready":
       if (!incomingIsForUs(ev.target_id) || !knowsTransfer(ev.id)) return;
@@ -956,6 +999,7 @@ function onEvent(ev: EventMsg) {
     case "declined":
       if (!knowsTransfer(ev.id)) return;
       pendingUploads.delete(ev.id);
+      acceptedWait.delete(ev.id);
       finishXfer(ev.id, "error");
       updateActivity(ev.id, { status: "declined" });
       closeIncomingIfMatching(ev.id);
@@ -1219,8 +1263,13 @@ function connect() {
   const wsProto = location.protocol === "https:" ? "wss" : "ws";
   const params = new URLSearchParams({ role });
   if (!isHost) {
-    const saved = sessionStorage.getItem("lanlink-web-id");
-    if (saved) params.set("id", saved);
+    const saved = readWebId();
+    if (saved) {
+      params.set("id", saved);
+      // Know our own id before "hello" lands, so offers replayed on connect
+      // are recognised instead of discarded.
+      if (!selfId) selfId = saved;
+    }
     params.set("device", isPhone ? "phone" : "browser");
   }
   const ws = new WebSocket(`${wsProto}://${location.host}/api/ws?${params}`);
@@ -1265,9 +1314,10 @@ void fetch("/api/status")
   .catch(() => undefined);
 
 async function pollInbox() {
-  if (!isHost) return;
   try {
-    const data = (await (await fetch("/api/inbox")).json()) as {
+    const mine = isHost ? "" : selfId || readWebId();
+    const url = mine ? `/api/inbox?for=${encodeURIComponent(mine)}` : "/api/inbox";
+    const data = (await (await fetch(url)).json()) as {
       id?: string;
       incoming?: Incoming[];
     };

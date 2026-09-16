@@ -81,6 +81,7 @@ pub enum WsEvent {
         filename: String,
         size: u64,
         from: String,
+        from_id: String,
         target_id: String,
     },
     Accepted {

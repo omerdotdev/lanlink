@@ -40,6 +40,17 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev
 
 If devices don’t see each other, allow **TCP 7420** and **UDP 5353** on a private/home firewall profile. Don’t forward those ports on the router.
 
+## GitHub releases
+
+GitHub-hosted runners build Windows (`windows-latest`) and Linux (`ubuntu-22.04`) when you push a version tag. Bump `version` in `src-tauri/tauri.conf.json`, then:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow opens a **draft** release with the installers. Check the files, then publish it. You can also run the **release** workflow by hand from the Actions tab.
+
 ## How it works
 
 1. The desktop app shows up on the LAN and listens on port 7420.

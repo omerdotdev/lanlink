@@ -195,11 +195,13 @@ async fn post_clip(
     Json(note).into_response()
 }
 
-async fn inbox(State(state): State<AppState>) -> impl IntoResponse {
-    let pending = state.inner.pending.read().await;
-    let items: Vec<_> = pending
+fn pending_incoming_json(
+    pending: &std::collections::HashMap<String, crate::state::PendingOffer>,
+    target_id: Option<&str>,
+) -> Vec<serde_json::Value> {
+    pending
         .iter()
-        .filter(|(_, p)| p.target_id == state.inner.id && !p.accepted)
+        .filter(|(_, p)| !p.accepted && target_id.map(|id| p.target_id == id).unwrap_or(true))
         .map(|(id, p)| {
             serde_json::json!({
                 "type": "incoming",
@@ -207,10 +209,33 @@ async fn inbox(State(state): State<AppState>) -> impl IntoResponse {
                 "filename": p.filename,
                 "size": p.size,
                 "from": p.from_name,
+                "from_id": p.from_id,
                 "target_id": p.target_id,
             })
         })
-        .collect();
+        .collect()
+}
+
+#[derive(Deserialize)]
+struct InboxQuery {
+    #[serde(rename = "for")]
+    for_id: Option<String>,
+}
+
+/// Only ever answer with offers aimed at the asking device, so a sender is
+/// never told about its own offer.
+async fn inbox(
+    State(state): State<AppState>,
+    Query(query): Query<InboxQuery>,
+) -> impl IntoResponse {
+    let want = query
+        .for_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(state.inner.id.as_str());
+    let pending = state.inner.pending.read().await;
+    let items = pending_incoming_json(&pending, Some(want));
     Json(serde_json::json!({ "id": state.inner.id, "incoming": items }))
 }
 
@@ -339,6 +364,11 @@ async fn handle_socket(state: AppState, socket: WebSocket, query: WsQuery, addr:
 
     let (mut sender, mut receiver) = socket.split();
     let mut rx = state.inner.events.subscribe();
+    let inbox_for = web_id.as_deref().unwrap_or(state.inner.id.as_str());
+    let incoming = {
+        let pending = state.inner.pending.read().await;
+        pending_incoming_json(&pending, Some(inbox_for))
+    };
     let hello = serde_json::json!({
         "type": "hello",
         "id": state.inner.id,
@@ -348,6 +378,7 @@ async fn handle_socket(state: AppState, socket: WebSocket, query: WsQuery, addr:
         "save_dir": state.save_dir().await,
         "peers": state.all_peers().await,
         "clips": state.clips().await,
+        "incoming": incoming,
         "public_network": public_network_warning().await,
     });
     let _ = sender.send(Message::Text(hello.to_string().into())).await;
@@ -395,6 +426,7 @@ async fn offer(State(state): State<AppState>, Json(body): Json<OfferReq>) -> imp
     if let Some(denied) = reject_blocked_file(&body.filename) {
         return denied;
     }
+    let from_id = body.from_id.clone();
     let id = Uuid::new_v4().to_string();
     let (tx, rx) = oneshot::channel();
     state.inner.pending.write().await.insert(
@@ -403,7 +435,7 @@ async fn offer(State(state): State<AppState>, Json(body): Json<OfferReq>) -> imp
             filename: body.filename.clone(),
             size: body.size,
             from_name: body.from_name.clone(),
-            from_id: body.from_id,
+            from_id: from_id.clone(),
             target_id: state.inner.id.clone(),
             decision: Some(tx),
             staged_path: None,
@@ -416,6 +448,7 @@ async fn offer(State(state): State<AppState>, Json(body): Json<OfferReq>) -> imp
         filename: body.filename,
         size: body.size,
         from: body.from_name,
+        from_id,
         target_id: state.inner.id.clone(),
     });
 
@@ -646,6 +679,7 @@ async fn web_offer(
             filename,
             size: body.size,
             from,
+            from_id: from_id.clone(),
             target_id,
         });
         let timeout_state = state.clone();
@@ -788,6 +822,7 @@ async fn send_local(
     let mut peer_id = String::new();
     let mut filename = String::from("file.bin");
     let mut from_name = String::new();
+    let mut from_id = String::new();
     let mut offer_id = String::new();
     let mut temp_path: Option<PathBuf> = None;
 
@@ -800,6 +835,8 @@ async fn send_local(
             peer_id = field.text().await.unwrap_or_default();
         } else if name == "from_name" {
             from_name = field.text().await.unwrap_or_default();
+        } else if name == "from_id" {
+            from_id = field.text().await.unwrap_or_default();
         } else if name == "offer_id" {
             offer_id = field.text().await.unwrap_or_default();
         } else if name == "file" {
@@ -859,6 +896,15 @@ async fn send_local(
             &client_ip(addr),
         );
     }
+    // Never attribute a guest's upload to this computer, or the desktop UI will
+    // mistake the offer for its own outgoing send and hide the Accept banner.
+    let sender_id = if !from_id.trim().is_empty() {
+        from_id.trim().to_string()
+    } else if addr.ip().is_loopback() {
+        state.inner.id.clone()
+    } else {
+        client_ip(addr)
+    };
     tracing::info!("send_local filename={filename} peer_id={peer_id} ip={}", client_ip(addr));
 
     let peer = state
@@ -869,11 +915,11 @@ async fn send_local(
 
     let Some(peer) = peer else {
         tracing::warn!("unknown peer {peer_id}; offering to this computer");
-        return ingest_to_this_device(state, filename, path, from).await;
+        return ingest_to_this_device(state, filename, path, from, sender_id).await;
     };
 
     if peer.kind == "self" || peer.id == state.inner.id {
-        return ingest_to_this_device(state, filename, path, from).await;
+        return ingest_to_this_device(state, filename, path, from, sender_id).await;
     }
 
     let send_state = state.clone();
@@ -901,6 +947,7 @@ async fn ingest_to_this_device(
     filename: String,
     path: PathBuf,
     from_name: String,
+    from_id: String,
 ) -> axum::response::Response {
     if let Some(denied) = reject_blocked_file(&filename) {
         let _ = tokio::fs::remove_file(&path).await;
@@ -914,7 +961,7 @@ async fn ingest_to_this_device(
             filename: filename.clone(),
             size,
             from_name: from_name.clone(),
-            from_id: "web".into(),
+            from_id: from_id.clone(),
             target_id: state.inner.id.clone(),
             decision: None,
             staged_path: Some(path),
@@ -927,6 +974,7 @@ async fn ingest_to_this_device(
         filename,
         size,
         from: from_name,
+        from_id,
         target_id: state.inner.id.clone(),
     });
     Json(serde_json::json!({ "ok": true, "id": id })).into_response()

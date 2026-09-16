@@ -60,11 +60,13 @@ async fn send_to_web(
         },
     );
     let from = state.inner.name.read().await.clone();
+    let from_id = state.inner.id.clone();
     state.emit(WsEvent::Incoming {
         id: id.clone(),
         filename,
         size,
         from,
+        from_id,
         target_id: peer.id,
     });
     Ok(())

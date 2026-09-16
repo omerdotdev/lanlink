@@ -1,22 +1,21 @@
-name: release
+name: ci
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [master]
+  pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: write
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  publish:
+  check:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows-latest
-          - platform: ubuntu-22.04
+        platform: [windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v5
@@ -29,9 +28,11 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - name: Cache Rust
-        uses: swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
 
@@ -44,12 +45,10 @@ jobs:
       - name: Install JS dependencies
         run: npm ci
 
-      - uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: v__VERSION__
-          releaseName: "Lanlink v__VERSION__"
-          releaseBody: "Windows and Linux installers are attached. Stay on a network you trust; see SECURITY.md."
-          releaseDraft: true
-          prerelease: false
+      # Also produces dist/, which the Rust build expects to exist.
+      - name: Build UI
+        run: npm run build
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings

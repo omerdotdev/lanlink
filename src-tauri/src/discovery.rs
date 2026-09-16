@@ -108,7 +108,7 @@ fn instance_name(id: &str) -> String {
 }
 
 fn sanitize_host(ip: &str) -> String {
-    ip.replace('.', "-").replace(':', "-")
+    ip.replace(['.', ':'], "-")
 }
 
 fn peer_from_info(info: &ServiceInfo) -> Option<Peer> {

@@ -17,10 +17,7 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::block_on(server::spawn(handle)).map_err(|err| {
                 tracing::error!("failed to start LAN server: {err}");
-                Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    err,
-                )) as Box<dyn std::error::Error>
+                Box::new(std::io::Error::other(err)) as Box<dyn std::error::Error>
             })?;
             Ok(())
         })

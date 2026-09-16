@@ -52,15 +52,36 @@ pub async fn spawn(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Locate the built UI. In a packaged app the files come from the bundle's
+/// resource directory; the compiled-in source path is only consulted for debug
+/// builds, so release installers take the same path in CI and locally.
 fn dist_dir(app: &tauri::AppHandle) -> PathBuf {
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dist");
-    if dev.join("index.html").exists() {
-        return dev;
+    #[cfg(debug_assertions)]
+    {
+        let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dist");
+        if dev.join("index.html").exists() {
+            return dev;
+        }
     }
-    app.path()
-        .resource_dir()
-        .map(|p| p.join("dist"))
-        .unwrap_or(dev)
+
+    if let Ok(base) = app.path().resource_dir() {
+        // `resources: ["../dist"]` is bundled as `_up_/dist`, because Tauri
+        // rewrites the leading `..` instead of letting a resource escape the
+        // resource directory.
+        for candidate in [base.join("dist"), base.join("_up_").join("dist")] {
+            if candidate.join("index.html").exists() {
+                return candidate;
+            }
+        }
+        error!(
+            "no bundled UI under {}; every page will 404",
+            base.display()
+        );
+        return base.join("dist");
+    }
+
+    error!("could not resolve the resource directory; every page will 404");
+    PathBuf::from("dist")
 }
 
 fn router(state: AppState, dist: PathBuf) -> Router {

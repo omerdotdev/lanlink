@@ -17,6 +17,8 @@ jobs:
         include:
           - platform: windows-latest
           - platform: ubuntu-22.04
+          - platform: macos-latest
+            args: --target universal-apple-darwin
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v5
@@ -29,6 +31,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Cache Rust
         uses: swatinem/rust-cache@v2
@@ -50,6 +54,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: "Lanlink v__VERSION__"
-          releaseBody: "Windows and Linux installers are attached. Stay on a network you trust; see SECURITY.md."
+          releaseBody: "Windows, macOS and Linux installers are attached. Stay on a network you trust; see SECURITY.md."
           releaseDraft: true
           prerelease: false
+          args: ${{ matrix.args }}

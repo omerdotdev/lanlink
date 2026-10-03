@@ -31,6 +31,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["../dist"]
+    "resources": ["../dist"],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
   }
 }

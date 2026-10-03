@@ -17,7 +17,7 @@ Stay on a network you trust. Nothing is encrypted, so don’t put this on the pu
 
 ## Run it
 
-You need [Rust](https://rustup.rs), [Node.js](https://nodejs.org) 18+, and [Tauri 2’s extras](https://v2.tauri.app/start/prerequisites/) (WebView2 on Windows, webkitgtk on Linux). On Windows, install [Visual Studio 2022 Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with **Desktop development with C++**. If `cargo` says `link.exe` is missing, run that installer by hand.
+You need [Rust](https://rustup.rs), [Node.js](https://nodejs.org) 18+, and [Tauri 2’s extras](https://v2.tauri.app/start/prerequisites/) (WebView2 on Windows, webkitgtk on Linux, Xcode Command Line Tools on macOS: `xcode-select --install`). On Windows, install [Visual Studio 2022 Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with **Desktop development with C++**. If `cargo` says `link.exe` is missing, run that installer by hand.
 
 ```bash
 npm install
@@ -42,7 +42,7 @@ If devices don’t see each other, allow **TCP 7420** and **UDP 5353** on a priv
 
 ## GitHub releases
 
-GitHub-hosted runners build Windows (`windows-latest`) and Linux (`ubuntu-22.04`) when you push a version tag. Bump `version` in `src-tauri/tauri.conf.json`, then:
+GitHub-hosted runners build Windows (`windows-latest`), macOS (`macos-latest`, a universal Intel + Apple Silicon build) and Linux (`ubuntu-22.04`) when you push a version tag. Bump `version` in `src-tauri/tauri.conf.json`, then:
 
 ```bash
 git tag v0.1.0

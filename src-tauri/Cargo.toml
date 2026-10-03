@@ -1,6 +1,6 @@
 [package]
 name = "lanlink"
-version = "1.0.0"
+version = "1.1.0"
 description = "Share files with devices on your local network"
 authors = ["Lanlink contributors"]
 edition = "2021"

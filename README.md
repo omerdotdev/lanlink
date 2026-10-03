@@ -4,6 +4,17 @@ Send a file or a short note to another device on the same Wi‑Fi. Install the d
 
 Stay on a network you trust. Nothing is encrypted, so don’t put this on the public internet. Details are in [SECURITY.md](SECURITY.md).
 
+<p align="center">
+  <img src="docs/screenshots/light.png" alt="Lanlink in light mode: join address and QR code at the top, then files, nearby devices and shared notes" width="48%" />
+  <img src="docs/screenshots/dark.png" alt="Lanlink in dark mode" width="48%" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/cyber.png" alt="Lanlink with the Cyberpunk skin" width="48%" />
+</p>
+
+The join address and QR code sit at the top of the window, so a phone can join without any scrolling. Five skins (Frutiger Aero, Liquid Glass, Cyberpunk, Astral, Space) and light/dark are in Settings.
+
 ## Features
 
 - Send files between computers, or from a computer to a phone browser (and back)

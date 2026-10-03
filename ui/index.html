@@ -65,6 +65,25 @@
         </p>
       </div>
 
+      <section class="block host-only connect-top" aria-labelledby="connect-heading">
+        <div class="block-head">
+          <p class="section-kicker">Connect</p>
+          <h2 id="connect-heading">Invite a phone or another computer</h2>
+          <p class="lede">
+            Anyone on the same Wi‑Fi can join from a browser. They do not need to install
+            Lanlink. Share the address below, or let them scan the code.
+          </p>
+        </div>
+        <div class="card join">
+          <div class="join-copy">
+            <p class="url" id="join-url">Starting…</p>
+            <p class="muted" id="save-dir"></p>
+            <button type="button" class="ghost" id="copy-url">Copy address</button>
+          </div>
+          <img id="qr" alt="QR code to join this device" />
+        </div>
+      </section>
+
       <section class="incoming" id="incoming-wrap" hidden>
         <div>
           <p class="section-kicker">Receive</p>
@@ -137,25 +156,6 @@
           <p class="muted" id="clip-status"></p>
           <ul id="clips" class="clips"></ul>
           <p class="muted" id="empty-clips">No shared notes yet.</p>
-        </div>
-      </section>
-
-      <section class="block host-only" aria-labelledby="connect-heading">
-        <div class="block-head">
-          <p class="section-kicker">Connect</p>
-          <h2 id="connect-heading">Invite a phone or another computer</h2>
-          <p class="lede">
-            Anyone on the same Wi‑Fi can join from a browser. They do not need to install
-            Lanlink. Share the address below, or let them scan the code.
-          </p>
-        </div>
-        <div class="card join">
-          <div class="join-copy">
-            <p class="url" id="join-url">Starting…</p>
-            <p class="muted" id="save-dir"></p>
-            <button type="button" class="ghost" id="copy-url">Copy address</button>
-          </div>
-          <img id="qr" alt="QR code to join this device" />
         </div>
       </section>
 

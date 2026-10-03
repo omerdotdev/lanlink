@@ -61,7 +61,9 @@
           <path d="M12 17.4h.01"></path>
         </svg>
         <p>
-          Windows marks this network as Public. Do not share the join URL here. Use a private/home network instead.
+          Windows marks this network as Public, so its firewall probably blocks other devices from reaching Lanlink.
+          This is common on a phone hotspot. If you trust this network, switch it to Private in Settings → Network
+          &amp; internet. Otherwise use a home network.
         </p>
       </div>
 
@@ -77,6 +79,7 @@
         <div class="card join">
           <div class="join-copy">
             <p class="url" id="join-url">Starting…</p>
+            <p class="muted" id="alt-urls" hidden></p>
             <p class="muted" id="save-dir"></p>
             <button type="button" class="ghost" id="copy-url">Copy address</button>
           </div>

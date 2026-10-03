@@ -51,6 +51,18 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev
 
 If devices don’t see each other, allow **TCP 7420** and **UDP 5353** on a private/home firewall profile. Don’t forward those ports on the router.
 
+## Phone hotspot
+
+Lanlink works when the computer joins your phone's hotspot. The phone and the computer are then on the same little network, and the phone opens the join address like on any Wi‑Fi. If it doesn't connect:
+
+- **Windows firewall.** Windows usually labels a hotspot network **Public** and blocks incoming connections. Set it to **Private** (Settings → Network & internet → Wi‑Fi → the network → Network profile type), or allow Lanlink on Public networks when Windows asks.
+- **Wrong address.** With Ethernet, VPN or VM adapters active, the main join address can be the wrong one. The Connect card lists the computer's other addresses; try those.
+- **Client isolation.** Some hotspots and routers stop devices from talking to each other. Turn that off if the setting exists.
+
+## Screen off or switching apps on a phone
+
+Sending a file *to* a phone uses the browser's own download, which keeps going with the screen off. Sending *from* a phone runs inside the web page, and phones freeze pages in the background. Lanlink asks the phone to keep the screen on while a transfer runs, but a manual lock or switching apps can still stop it. Keep the screen on until the transfer finishes.
+
 ## GitHub releases
 
 GitHub-hosted runners build Windows (`windows-latest`), macOS (`macos-latest`, a universal Intel + Apple Silicon build) and Linux (`ubuntu-22.04`) when you push a version tag. Bump `version` in `src-tauri/tauri.conf.json`, then:

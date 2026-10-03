@@ -233,6 +233,30 @@ impl AppState {
     pub fn join_url(&self) -> String {
         format!("http://{}:{}", lan_ip(), self.inner.port)
     }
+
+    /// Other addresses this computer answers on. If the main join URL does not
+    /// work (a hotspot, Ethernet plus Wi-Fi, a VPN), one of these usually does.
+    pub fn alt_urls(&self) -> Vec<String> {
+        let main = lan_ip();
+        let mut urls: Vec<String> = local_ip_address::list_afinet_netifas()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(name, ip)| match ip {
+                std::net::IpAddr::V4(v4)
+                    if !v4.is_loopback()
+                        && !v4.is_link_local()
+                        && v4.to_string() != main
+                        && !is_virtual_adapter(&name) =>
+                {
+                    Some(format!("http://{}:{}", v4, self.inner.port))
+                }
+                _ => None,
+            })
+            .collect();
+        urls.sort();
+        urls.dedup();
+        urls
+    }
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -305,6 +329,13 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+fn is_virtual_adapter(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    ["vethernet", "docker", "veth", "vmnet", "virtualbox", "vboxnet", "br-", "utun", "awdl", "llw", "wsl"]
+        .iter()
+        .any(|marker| name.contains(marker))
 }
 
 pub fn lan_ip() -> String {

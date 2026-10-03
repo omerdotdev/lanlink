@@ -12,6 +12,7 @@ type Hello = {
   web_id: string | null;
   name: string;
   url: string;
+  alt_urls?: string[];
   save_dir: string;
   peers: Peer[];
   clips?: ClipNote[];
@@ -52,6 +53,7 @@ type EventMsg =
 const peersEl = document.querySelector("#peers") as HTMLUListElement;
 const emptyPeers = document.querySelector("#empty-peers") as HTMLParagraphElement;
 const joinUrl = document.querySelector("#join-url") as HTMLParagraphElement;
+const altUrls = document.querySelector("#alt-urls") as HTMLParagraphElement;
 const saveDir = document.querySelector("#save-dir") as HTMLParagraphElement;
 const qr = document.querySelector("#qr") as HTMLImageElement;
 const nameInput = document.querySelector("#device-name") as HTMLInputElement;
@@ -422,7 +424,77 @@ function finishXfer(id: string, state: "done" | "error") {
   }, 4000);
 }
 
+// A sleeping phone freezes the page and kills an upload mid-way, so keep the
+// screen on while something is moving. navigator.wakeLock only exists on https
+// or localhost, and the join URL is plain http, so fall back to the old trick
+// of playing a tiny muted video, which also keeps the screen awake.
+let wakeLock: { release(): Promise<void> } | null = null;
+let wakeVideo: HTMLVideoElement | null = null;
+let wakeTimer = 0;
+
+function holdScreenAwake() {
+  const nav = navigator as Navigator & {
+    wakeLock?: { request(type: "screen"): Promise<{ release(): Promise<void> }> };
+  };
+  if (nav.wakeLock) {
+    if (!wakeLock) {
+      nav.wakeLock
+        .request("screen")
+        .then((lock) => {
+          wakeLock = lock;
+        })
+        .catch(() => undefined);
+    }
+    return;
+  }
+  if (wakeVideo) return;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 2;
+  const ctx = canvas.getContext("2d");
+  const stream = (canvas as HTMLCanvasElement & { captureStream?: () => MediaStream }).captureStream?.();
+  if (!ctx || !stream) return;
+  const video = document.createElement("video");
+  video.muted = true;
+  video.loop = true;
+  video.setAttribute("playsinline", "");
+  video.srcObject = stream;
+  video.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.01;pointer-events:none";
+  document.body.append(video);
+  wakeTimer = window.setInterval(() => {
+    ctx.fillStyle = Math.random() < 0.5 ? "#000" : "#010101";
+    ctx.fillRect(0, 0, 2, 2);
+  }, 500);
+  void video.play().catch(() => undefined);
+  wakeVideo = video;
+}
+
+function releaseScreenAwake() {
+  if (wakeLock) {
+    void wakeLock.release().catch(() => undefined);
+    wakeLock = null;
+  }
+  if (wakeVideo) {
+    window.clearInterval(wakeTimer);
+    wakeVideo.pause();
+    wakeVideo.remove();
+    wakeVideo = null;
+  }
+}
+
+function syncScreenAwake() {
+  if ([...xfers.values()].some((x) => x.state === "active")) holdScreenAwake();
+  else releaseScreenAwake();
+}
+
+// The browser drops a wake lock whenever the page is hidden; take it again on return.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  wakeLock = null;
+  syncScreenAwake();
+});
+
 function renderXfers() {
+  syncScreenAwake();
   xferPop.hidden = xfers.size === 0;
   xferList.replaceChildren();
   for (const x of xfers.values()) {
@@ -436,6 +508,14 @@ function renderXfers() {
     (item.querySelector(".xfer-bar > span") as HTMLElement).style.width = `${pct}%`;
     xferList.append(item);
   }
+}
+
+function showAltUrls(urls: string[] | undefined) {
+  const list = (urls ?? []).slice(0, 3);
+  altUrls.hidden = !isHost || list.length === 0;
+  altUrls.textContent = list.length
+    ? "Phone cannot connect? This computer is also at " + list.join(" or ") + "."
+    : "";
 }
 
 function showSaveDir(path: string) {
@@ -676,6 +756,23 @@ function renderPeers() {
 }
 
 async function saveReceivedFile(id: string, url: string, filename: string, knownSize = 0) {
+  if (!isHost) {
+    // Let the browser own the download. Its download manager keeps going with
+    // the screen off or the tab in the background, and does not buffer the
+    // whole file in memory like fetch() would.
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.rel = "noopener";
+    link.style.display = "none";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setXfer(id, { filename, direction: "receive", done: knownSize, total: knownSize, state: "active" });
+    finishXfer(id, "done");
+    updateActivity(id, { filename, direction: "receive", status: "done", size: knownSize });
+    return;
+  }
   setXfer(id, { filename, direction: "receive", done: 0, total: knownSize, state: "active" });
   const res = await fetch(url);
   if (!res.ok) {
@@ -939,6 +1036,7 @@ function onEvent(ev: EventMsg) {
       if (isHost) nameInput.value = ev.name;
       hostId = ev.id;
       joinUrl.textContent = ev.url;
+      showAltUrls(ev.alt_urls);
       showSaveDir(ev.save_dir);
       qr.src = `/api/qr.svg?t=${Date.now()}`;
       peers = ev.peers;
@@ -982,10 +1080,12 @@ function onEvent(ev: EventMsg) {
       break;
     case "complete": {
       if (!knowsTransfer(ev.id)) return;
+      const record = activity.find((item) => item.id === ev.id);
+      if (record?.status === "done") break;
       if (!xfers.has(ev.id)) {
         setXfer(ev.id, {
           filename: ev.filename,
-          direction: "receive",
+          direction: record?.direction ?? "receive",
           done: 1,
           total: 1,
           state: "active",
@@ -1294,10 +1394,11 @@ renderClips();
 updateSendControls();
 void fetch("/api/status")
   .then((r) => r.json())
-  .then((status: { id: string; name: string; url: string; save_dir: string; peers: Peer[]; clips?: ClipNote[]; public_network?: boolean }) => {
+  .then((status: { id: string; name: string; url: string; alt_urls?: string[]; save_dir: string; peers: Peer[]; clips?: ClipNote[]; public_network?: boolean }) => {
     hostId = status.id;
     if (!joinUrl.textContent || joinUrl.textContent === "Starting…") {
       joinUrl.textContent = status.url;
+      showAltUrls(status.alt_urls);
       if (isHost) nameInput.value = status.name;
       showSaveDir(status.save_dir);
       qr.src = `/api/qr.svg?t=${Date.now()}`;

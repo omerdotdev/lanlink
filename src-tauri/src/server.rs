@@ -267,6 +267,7 @@ async fn status(State(state): State<AppState>) -> impl IntoResponse {
         "name": name,
         "port": state.inner.port,
         "url": state.join_url(),
+        "alt_urls": state.alt_urls(),
         "save_dir": state.save_dir().await,
         "peers": state.all_peers().await,
         "clips": state.clips().await,
@@ -396,6 +397,7 @@ async fn handle_socket(state: AppState, socket: WebSocket, query: WsQuery, addr:
         "web_id": web_id,
         "name": *state.inner.name.read().await,
         "url": state.join_url(),
+        "alt_urls": state.alt_urls(),
         "save_dir": state.save_dir().await,
         "peers": state.all_peers().await,
         "clips": state.clips().await,
@@ -404,8 +406,18 @@ async fn handle_socket(state: AppState, socket: WebSocket, query: WsQuery, addr:
     });
     let _ = sender.send(Message::Text(hello.to_string().into())).await;
 
+    // Phones sleep, Wi-Fi hotspots drop idle sockets. A steady ping keeps the
+    // connection alive and lets us notice a dead one instead of hanging on it.
+    let mut keepalive = tokio::time::interval(Duration::from_secs(20));
+    keepalive.tick().await;
+
     loop {
         tokio::select! {
+            _ = keepalive.tick() => {
+                if sender.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    break;
+                }
+            }
             event = rx.recv() => {
                 match event {
                     Ok(ev) => {
@@ -596,8 +608,26 @@ async fn download(State(state): State<AppState>, Path(id): Path<String>) -> impl
                     headers.insert(header::CONTENT_LENGTH, len);
                 }
             }
-            let body = Body::from_stream(ReaderStream::new(reader));
-            (headers, body).into_response()
+            // Browsers hand the download to their own manager, so the page cannot
+            // report when it ends. Tell everyone once the last byte has gone out.
+            let notify = state.clone();
+            let notify_name = file.filename.clone();
+            let total = file.size;
+            let mut sent = 0u64;
+            let stream = ReaderStream::new(reader).map(move |chunk| {
+                if let Ok(bytes) = &chunk {
+                    sent += bytes.len() as u64;
+                    if total > 0 && sent >= total {
+                        notify.emit(WsEvent::Complete {
+                            id: id.clone(),
+                            path: None,
+                            filename: notify_name.clone(),
+                        });
+                    }
+                }
+                chunk
+            });
+            (headers, Body::from_stream(stream)).into_response()
         }
         Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
     }

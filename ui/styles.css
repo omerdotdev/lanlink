@@ -1350,3 +1350,25 @@ html[data-theme="dark"] .disclaimer-fab {
     height: 132px;
   }
 }
+
+/* Join card sits right under the header so the QR code is visible on load. */
+.connect-top {
+  margin-top: -8px;
+}
+
+.connect-top .block-head {
+  margin-bottom: 10px;
+}
+
+.connect-top .lede {
+  display: none;
+}
+
+.connect-top .join {
+  align-items: center;
+}
+
+.connect-top #qr {
+  width: 120px;
+  height: 120px;
+}
